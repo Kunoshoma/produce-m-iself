@@ -12,6 +12,7 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import dev.kunoshoma.produce.backup.BackupManager
 import dev.kunoshoma.produce.data.settings.SettingsRepository
 import java.time.Duration
 import java.time.Instant
@@ -30,11 +31,13 @@ class ReportWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     interface Deps {
         fun reportService(): ReportService
         fun settings(): SettingsRepository
+        fun backup(): BackupManager
     }
 
     override suspend fun doWork(): Result {
         val deps = EntryPointAccessors.fromApplication(applicationContext, Deps::class.java)
         deps.reportService().backfill(notify = true)
+        runCatching { deps.backup().autoBackup() }
         scheduleNextBoundary(applicationContext, deps.settings().current().dayBoundaryHour)
         return Result.success()
     }

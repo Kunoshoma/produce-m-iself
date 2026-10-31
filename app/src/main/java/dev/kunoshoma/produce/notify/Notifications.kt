@@ -63,6 +63,14 @@ class Notifications @Inject constructor(@ApplicationContext private val context:
         channel = CHANNEL_REPORT,
     )
 
+    fun serviceDown() = post(
+        id = ID_SERVICE,
+        title = "割り込みが止まってるよ",
+        text = "アクセシビリティ設定で「プロデュース」を再度 ON にして。止まってた時間は「監視なし」として記録される",
+        route = MainActivity.ROUTE_SETTINGS,
+        channel = CHANNEL_REPORT,
+    )
+
     fun cancelLesson() = NotificationManagerCompat.from(context).cancel(ID_LESSON)
     fun cancelRest() = NotificationManagerCompat.from(context).cancel(ID_REST)
 
@@ -92,5 +100,6 @@ class Notifications @Inject constructor(@ApplicationContext private val context:
         const val ID_REST = 2
         const val ID_DAILY = 3
         const val ID_WEEKLY = 4
+        const val ID_SERVICE = 5
     }
 }

@@ -3,6 +3,7 @@ package dev.kunoshoma.produce
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
 import dev.kunoshoma.produce.data.settings.SettingsRepository
+import dev.kunoshoma.produce.interrupt.ServiceWatchdogWorker
 import dev.kunoshoma.produce.notify.Notifications
 import dev.kunoshoma.produce.report.ReportWorker
 import kotlinx.coroutines.CoroutineScope
@@ -22,5 +23,6 @@ class ProduceApp : Application() {
         super.onCreate()
         notifications.ensureChannels()
         scope.launch { ReportWorker.schedule(this@ProduceApp, settings.current().dayBoundaryHour) }
+        ServiceWatchdogWorker.schedule(this)
     }
 }

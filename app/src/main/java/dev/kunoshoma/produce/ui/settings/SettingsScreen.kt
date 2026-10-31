@@ -13,6 +13,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
+import dev.kunoshoma.produce.backup.BackupManager
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedButton
@@ -49,6 +58,12 @@ import kotlin.math.roundToInt
 fun SettingsScreen(onBack: () -> Unit, onBlockedApps: () -> Unit = {}, vm: SettingsViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val accessibilityOn by vm.accessibilityEnabled.collectAsStateWithLifecycle()
+    val message by vm.message.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    var confirmImport by remember { mutableStateOf<Uri?>(null) }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let(vm::exportBackup) }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { confirmImport = it } }
+    LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
     val settings by vm.settings.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -58,6 +73,7 @@ fun SettingsScreen(onBack: () -> Unit, onBlockedApps: () -> Unit = {}, vm: Setti
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る") } },
             )
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         val s = settings ?: return@Scaffold
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
@@ -156,9 +172,26 @@ fun SettingsScreen(onBack: () -> Unit, onBlockedApps: () -> Unit = {}, vm: Setti
                 )
             }
 
+            SectionTitle("バックアップ")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(onClick = { exportLauncher.launch(BackupManager.suggestedFileName()) }, modifier = Modifier.weight(1f)) { Text("JSON に書き出す") }
+                OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) }, modifier = Modifier.weight(1f)) { Text("JSON から復元") }
+            }
+            Text("週次レポート生成時にアプリ専用フォルダ（Android/data/…/files/backups）にも直近 4 世代を自動保存。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+
             Spacer(Modifier.height(16.dp))
             Text("このアプリは通信しません（INTERNET 権限なし）。データは端末内だけ。", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(32.dp))
         }
+    }
+
+    confirmImport?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { confirmImport = null },
+            title = { Text("復元する？") },
+            text = { Text("今のデータは全部置き換わる。先に書き出しておくと安心。") },
+            confirmButton = { TextButton(onClick = { vm.importBackup(uri); confirmImport = null }) { Text("復元") } },
+            dismissButton = { TextButton(onClick = { confirmImport = null }) { Text("やめる") } },
+        )
     }
 }
