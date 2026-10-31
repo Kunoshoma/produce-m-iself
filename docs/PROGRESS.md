@@ -7,7 +7,7 @@
 - 仕様：`docs/SPEC.md` v0.4 で確定。
 - 実装：**M1〜M4.5 まで一通りコードがある**（M1 プロデュース本体、M2 割り込み、M3 レポート、M4 週次ランク、M4.5 中期目標と試験、運用機能：後付け記録・寝る・オフ・バックアップ・死活監視・ウィジェット）。
   Android SDK がこのサンドボックスから取得できないため、Android 本体のコンパイルは GitHub Actions 上で確認している（下記「ビルドの見方」）。
-  **M3 まで入った時点の APK は CI でビルド成功**。それ以降（目標・ウィジェット）の CI 結果は Actions の最新 run を見てね。
+  **全機能入りの debug APK が CI でビルド成功**（Actions → Android CI → run #13 以降の Artifacts `produce-m-iself-debug-apk`）。
 - ゲームロジック（`:core`）はローカルで単体テスト済み（36 本グリーン）。
 - 実機では一度も動かしていない。最初の起動で落ちる可能性はある（特に Room のスキーマ、Glance）。ログは `adb logcat | grep -i produce` で。
 
