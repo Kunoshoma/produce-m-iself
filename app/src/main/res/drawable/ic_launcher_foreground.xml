@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 三角形 3 つ = 3 択。赤 / 黄 / 青 の 3 軸カラー。 -->
+    <path android:fillColor="#E5484D" android:pathData="M54,22 L70,50 L38,50 Z" />
+    <path android:fillColor="#F5B500" android:pathData="M34,56 L50,84 L18,84 Z" />
+    <path android:fillColor="#3E7BFA" android:pathData="M74,56 L90,84 L58,84 Z" />
+</vector>

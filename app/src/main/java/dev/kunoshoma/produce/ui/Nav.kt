@@ -1,0 +1,78 @@
+package dev.kunoshoma.produce.ui
+
+import androidx.compose.runtime.Composable
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
+import dev.kunoshoma.produce.ui.actions.ActionEditScreen
+import dev.kunoshoma.produce.ui.actions.ActionsScreen
+import dev.kunoshoma.produce.ui.home.HomeScreen
+import dev.kunoshoma.produce.ui.lesson.LessonScreen
+import dev.kunoshoma.produce.ui.manual.ManualLogScreen
+import dev.kunoshoma.produce.ui.produce.ProduceScreen
+import dev.kunoshoma.produce.ui.result.ResultScreen
+import dev.kunoshoma.produce.ui.settings.SettingsScreen
+
+object Routes {
+    const val HOME = "home"
+    const val PRODUCE = "produce"
+    const val LESSON = "lesson"
+    const val RESULT = "result"
+    const val ACTIONS = "actions"
+    const val ACTION_EDIT = "action_edit/{id}"
+    const val MANUAL = "manual"
+    const val SETTINGS = "settings"
+
+    fun actionEdit(id: Long) = "action_edit/$id"
+}
+
+@Composable
+fun ProduceNavHost(nav: NavHostController) {
+    NavHost(navController = nav, startDestination = Routes.HOME) {
+        composable(Routes.HOME) {
+            HomeScreen(
+                onProduce = { nav.navigate(Routes.PRODUCE) },
+                onLesson = { nav.navigate(Routes.LESSON) },
+                onManual = { nav.navigate(Routes.MANUAL) },
+                onActions = { nav.navigate(Routes.ACTIONS) },
+                onSettings = { nav.navigate(Routes.SETTINGS) },
+            )
+        }
+        composable(Routes.PRODUCE) {
+            ProduceScreen(
+                onBack = { nav.popBackStack() },
+                onLessonStarted = { nav.navigate(Routes.LESSON) { popUpTo(Routes.HOME) } },
+                onDone = { nav.popBackStack(Routes.HOME, inclusive = false) },
+            )
+        }
+        composable(Routes.LESSON) {
+            LessonScreen(
+                onFinish = { nav.navigate(Routes.RESULT) { popUpTo(Routes.HOME) } },
+                onBack = { nav.popBackStack(Routes.HOME, inclusive = false) },
+            )
+        }
+        composable(Routes.RESULT) {
+            ResultScreen(onHome = { nav.popBackStack(Routes.HOME, inclusive = false) })
+        }
+        composable(Routes.ACTIONS) {
+            ActionsScreen(
+                onBack = { nav.popBackStack() },
+                onEdit = { id -> nav.navigate(Routes.actionEdit(id)) },
+            )
+        }
+        composable(
+            Routes.ACTION_EDIT,
+            arguments = listOf(navArgument("id") { type = NavType.LongType }),
+        ) { entry ->
+            ActionEditScreen(id = entry.arguments?.getLong("id") ?: 0L, onBack = { nav.popBackStack() })
+        }
+        composable(Routes.MANUAL) {
+            ManualLogScreen(onBack = { nav.popBackStack() })
+        }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(onBack = { nav.popBackStack() })
+        }
+    }
+}
