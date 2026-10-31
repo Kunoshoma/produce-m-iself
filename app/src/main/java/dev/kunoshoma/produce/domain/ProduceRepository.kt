@@ -22,6 +22,7 @@ import dev.kunoshoma.produce.data.db.ActionTemplateDao
 import dev.kunoshoma.produce.data.db.ActionTemplateEntity
 import dev.kunoshoma.produce.data.db.ActiveLessonDao
 import dev.kunoshoma.produce.data.db.ActiveLessonEntity
+import dev.kunoshoma.produce.data.db.AxisGain
 import dev.kunoshoma.produce.data.db.BlockedAppDao
 import dev.kunoshoma.produce.data.db.BlockedAppEntity
 import dev.kunoshoma.produce.data.db.ServiceGapDao
@@ -164,7 +165,10 @@ class ProduceRepository @Inject constructor(
             @Suppress("UNCHECKED_CAST")
             val todayRests = arr[3] as List<RestLogEntity>
             @Suppress("UNCHECKED_CAST")
-            val (totals, todayGains, weekGains) = arr[4] as Triple<List<dev.kunoshoma.produce.data.db.AxisGain>, List<dev.kunoshoma.produce.data.db.AxisGain>, List<dev.kunoshoma.produce.data.db.AxisGain>>
+            val gainTriple = arr[4] as Triple<List<AxisGain>, List<AxisGain>, List<AxisGain>>
+            val totals = gainTriple.first
+            val todayGains = gainTriple.second
+            val weekGains = gainTriple.third
             val activeLesson = arr[5] as ActiveLessonEntity?
 
             val streak = streakInfo(date, day, todayLogs.size)
