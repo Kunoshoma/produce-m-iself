@@ -5,9 +5,9 @@
 ## いまの状態
 
 - 仕様：`docs/SPEC.md` v0.4 で確定。
-- 実装：**M1 のコードを書き終えた**段階。Android SDK がこのサンドボックスから取得できないため、
-  Android 本体のコンパイルは GitHub Actions 上で確認している（下記「ビルドの見方」）。
-- ゲームロジック（`:core`）はローカルで単体テスト済み（32 本グリーン）。
+- 実装：**M1 と M2（割り込み）のコードを書き終え、M3 のレポート計算部分も `:core` に入れた**段階。
+  Android SDK がこのサンドボックスから取得できないため、Android 本体のコンパイルは GitHub Actions 上で確認している（下記「ビルドの見方」）。
+- ゲームロジック（`:core`）はローカルで単体テスト済み（36 本グリーン）。
 
 ## モジュール構成
 
@@ -21,7 +21,9 @@
 - `core/src/main/kotlin/dev/kunoshoma/produce/core/rules/*` — SPEC 3 章・12 章の数式はここ。
 - `app/src/main/java/dev/kunoshoma/produce/domain/ProduceRepository.kt` — ゲーム進行の書き込みはすべてここを通す。
 - `app/src/main/java/dev/kunoshoma/produce/data/db/Entities.kt` — Room のテーブル定義。
-- `app/src/main/java/dev/kunoshoma/produce/ui/*` — 画面（Home / Produce / Lesson / Result / Actions / Manual / Settings）。
+- `app/src/main/java/dev/kunoshoma/produce/ui/*` — 画面（Home / Produce / Lesson / Result / Actions / Manual / Settings / BlockedApps）。
+- `app/src/main/java/dev/kunoshoma/produce/interrupt/*` — AccessibilityService、割り込み判定（`InterruptGate`）、割り込み画面。
+- `core/src/main/kotlin/dev/kunoshoma/produce/core/report/Reports.kt` — 日次・週次レポートの集計とコメント文。
 
 ## M1 でできること
 
@@ -36,10 +38,19 @@
 - 設定：体力まわり、休む候補、引き直し回数、SP 率、日付境界、ランク閾値、軸の名前。
 - 通信なし（`INTERNET` 権限なし）、バックアップ無効。
 
+## M2 でできること（割り込み）
+
+- 設定 → 割り込み → 「アクセシビリティ設定」で本アプリのサービスを ON にすると、対象アプリ（既定：YouTube / X / TikTok / Instagram。設定で追加・削除）を開いた瞬間に全画面の 3 択が出る。
+- レッスン中に対象アプリを開くと「レッスン中！」で止め、脱線回数を記録（結果画面で確認を促す）。
+- 「休む」を選ぶと許可時間だけ通し、時間切れで次に開いたときに休む終了処理をして再び 3 択。
+- 静かな時間（既定 22〜5 時）、寝る宣言中、オフ日は割り込まない。
+- 3 択画面を長押しで緊急バイパス（既定 5 分、1 日 3 回、記録に残る）。
+- サービスの接続・切断を `service_gaps` に記録（レポートで「監視なし」表示に使う予定）。
+
 ## まだないもの（SPEC との差分）
 
-- M2：娯楽アプリ検知の割り込み（AccessibilityService）、静かな時間、死活監視。
-- M3：日次レポートの自動生成・通知、グラフ、ウィジェット、JSON バックアップ/復元。
+- M2 残り：15 分ごとの死活監視ワーカーと「再 ON して」通知（接続記録だけは入っている）。
+- M3：日次レポートの**保存・通知・画面**（計算と文面は `core/report/Reports.kt` にあり、テスト済み）、グラフ、ウィジェット、JSON バックアップ/復元。
 - M4：週次レポート画面（ランク計算自体は入っている）。
 - M4.5：中期目標の UI（逆算ロジックは `GoalCalculator` にあり、テスト済み）。
 
