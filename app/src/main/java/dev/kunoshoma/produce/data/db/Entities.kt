@@ -100,6 +100,25 @@ data class DayStateEntity(
     val closedAt: Instant? = null,
     /** 進行中の休む。 */
     val activeRestLogId: Long? = null,
+    /** 緊急バイパスの使用回数と有効期限（SPEC 4.2）。 */
+    val bypassesUsed: Int = 0,
+    val bypassUntil: Instant? = null,
+)
+
+/** 割り込み対象の娯楽アプリ。 */
+@Entity(tableName = "blocked_apps")
+data class BlockedAppEntity(
+    @PrimaryKey val packageName: String,
+    val label: String,
+    val enabled: Boolean = true,
+)
+
+/** 割り込みサービスが止まっていた区間（SPEC 13.5）。endedAt が null なら現在も停止中。 */
+@Entity(tableName = "service_gaps")
+data class ServiceGapEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val startedAt: Instant,
+    val endedAt: Instant?,
 )
 
 /** 進行中のレッスン（1 件のみ）。 */

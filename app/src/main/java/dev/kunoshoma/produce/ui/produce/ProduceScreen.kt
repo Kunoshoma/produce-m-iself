@@ -92,15 +92,14 @@ fun ProduceScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (s != null) StaminaBar(current = s.day.stamina, max = s.settings.stamina.max, modifier = Modifier.padding(top = 8.dp))
-            choices.forEach { c ->
-                when (c) {
-                    is Choice.Lesson -> LessonCard(c, s?.settings, enabled = !busy) { vm.pickLesson(c) }
-                    is Choice.Rest -> RestCard(c, enabled = !busy) {
-                        if (c.minuteOptions.size == 1) vm.pickRest(c.minuteOptions.first()) else restPicker = c
-                    }
-                    Choice.Sleep -> SleepCard(enabled = !busy) { vm.pickSleep() }
-                }
-            }
+            ChoiceCards(
+                choices = choices,
+                settings = s?.settings,
+                enabled = !busy,
+                onLesson = vm::pickLesson,
+                onRest = { c -> if (c.minuteOptions.size == 1) vm.pickRest(c.minuteOptions.first()) else restPicker = c },
+                onSleep = vm::pickSleep,
+            )
             if (s != null) {
                 val left = s.redrawsLeft
                 OutlinedButton(
@@ -127,6 +126,25 @@ fun ProduceScreen(
             confirmButton = {},
             dismissButton = { TextButton(onClick = { restPicker = null }) { Text("やめる") } },
         )
+    }
+}
+
+/** 3 択のカード群。ホームからの画面と割り込み画面で共用する。 */
+@Composable
+fun ChoiceCards(
+    choices: List<Choice>,
+    settings: Settings?,
+    enabled: Boolean,
+    onLesson: (Choice.Lesson) -> Unit,
+    onRest: (Choice.Rest) -> Unit,
+    onSleep: () -> Unit,
+) {
+    choices.forEach { c ->
+        when (c) {
+            is Choice.Lesson -> LessonCard(c, settings, enabled) { onLesson(c) }
+            is Choice.Rest -> RestCard(c, enabled) { onRest(c) }
+            Choice.Sleep -> SleepCard(enabled, onSleep)
+        }
     }
 }
 

@@ -27,6 +27,8 @@ object AppModule {
     @Provides fun restLogs(db: AppDatabase) = db.restLogs()
     @Provides fun dayStates(db: AppDatabase) = db.dayStates()
     @Provides fun activeLesson(db: AppDatabase) = db.activeLesson()
+    @Provides fun blockedApps(db: AppDatabase) = db.blockedApps()
+    @Provides fun serviceGaps(db: AppDatabase) = db.serviceGaps()
 
     @Provides
     @Singleton

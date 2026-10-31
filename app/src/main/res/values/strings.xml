@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">プロデュース</string>
+    <string name="accessibility_label">プロデュース（娯楽アプリの割り込み）</string>
+    <string name="accessibility_description">YouTube などの娯楽アプリを開いたときに 3 択を表示するために、どのアプリが前面にあるかだけを見ます。画面の内容や入力は読みません。通信もしません。</string>
 </resources>

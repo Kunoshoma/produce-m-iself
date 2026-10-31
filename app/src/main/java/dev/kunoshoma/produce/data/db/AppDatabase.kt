@@ -11,6 +11,8 @@ import androidx.room.TypeConverters
         RestLogEntity::class,
         DayStateEntity::class,
         ActiveLessonEntity::class,
+        BlockedAppEntity::class,
+        ServiceGapEntity::class,
     ],
     version = 1,
     exportSchema = true,
@@ -22,4 +24,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun restLogs(): RestLogDao
     abstract fun dayStates(): DayStateDao
     abstract fun activeLesson(): ActiveLessonDao
+    abstract fun blockedApps(): BlockedAppDao
+    abstract fun serviceGaps(): ServiceGapDao
 }

@@ -52,15 +52,21 @@ class ProduceViewModel @Inject constructor(private val repo: ProduceRepository) 
         _busy.value = false
     }
 
-    fun pickRest(minutes: Int) = viewModelScope.launch {
+    /** 直前の Done がレッスン開始でも休むでもなく「寝る」だったか。割り込み画面の遷移先判定用。 */
+    var lastPickWasSleep: Boolean = false
+        private set
+
+    fun pickRest(minutes: Int, packageName: String? = null) = viewModelScope.launch {
         if (_busy.value) return@launch
         _busy.value = true
-        repo.startRest(minutes)
+        lastPickWasSleep = false
+        repo.startRest(minutes, packageName)
         _event.value = ProduceEvent.Done
         _busy.value = false
     }
 
     fun pickSleep() = viewModelScope.launch {
+        lastPickWasSleep = true
         repo.closeDay()
         _event.value = ProduceEvent.Done
     }

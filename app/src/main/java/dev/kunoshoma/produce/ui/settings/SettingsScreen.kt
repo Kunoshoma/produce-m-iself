@@ -12,7 +12,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import android.content.Intent
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import dev.kunoshoma.produce.ui.theme.StaminaGreen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,7 +46,9 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(onBack: () -> Unit, onBlockedApps: () -> Unit = {}, vm: SettingsViewModel = hiltViewModel()) {
+    val context = LocalContext.current
+    val accessibilityOn by vm.accessibilityEnabled.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -52,6 +61,42 @@ fun SettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) 
     ) { padding ->
         val s = settings ?: return@Scaffold
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
+            SectionTitle("割り込み（娯楽アプリ検知）")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("割り込みを使う")
+                    Text(
+                        if (accessibilityOn) "アクセシビリティ：ON" else "アクセシビリティ：OFF（下のボタンから有効化）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (accessibilityOn) StaminaGreen else MaterialTheme.colorScheme.error,
+                    )
+                }
+                Switch(checked = s.interruptEnabled, onCheckedChange = { v -> vm.update { it.copy(interruptEnabled = v) } })
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                OutlinedButton(
+                    onClick = { context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+                    modifier = Modifier.weight(1f),
+                ) { Text("アクセシビリティ設定") }
+                FilledTonalButton(onClick = onBlockedApps, modifier = Modifier.weight(1f)) { Text("対象アプリを選ぶ") }
+            }
+            Text(
+                "見るのは前面アプリのパッケージ名だけ。画面の内容は読まない。Pixel の「使っていないアプリの権限を削除」が ON だと切れることがあるので、このアプリは OFF にしておくと安心。",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
+                Text("静かな時間（割り込まない）", Modifier.weight(1f))
+                Switch(checked = s.quietHours.enabled, onCheckedChange = { v -> vm.update { it.copy(quietHours = it.quietHours.copy(enabled = v)) } })
+            }
+            Text("開始 ${s.quietHours.startHour} 時", style = MaterialTheme.typography.bodySmall)
+            ChipRow(items = listOf(20, 21, 22, 23, 0, 1), selected = { it == s.quietHours.startHour }, onSelect = { h -> vm.update { it.copy(quietHours = it.quietHours.copy(startHour = h)) } }, label = { "$it" })
+            Text("終了 ${s.quietHours.endHour} 時", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+            ChipRow(items = listOf(4, 5, 6, 7, 8, 9), selected = { it == s.quietHours.endHour }, onSelect = { h -> vm.update { it.copy(quietHours = it.quietHours.copy(endHour = h)) } }, label = { "$it" })
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                NumberField("バイパス 分", s.bypassMinutes, Modifier.weight(1f)) { v -> if (v > 0) vm.update { it.copy(bypassMinutes = v) } }
+                NumberField("バイパス 回/日", s.bypassesPerDay, Modifier.weight(1f)) { v -> vm.update { it.copy(bypassesPerDay = v) } }
+            }
+
             SectionTitle("体力")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 NumberField("最大体力", s.stamina.max, Modifier.weight(1f)) { v -> if (v > 0) vm.update { it.copy(stamina = it.stamina.copy(max = v)) } }

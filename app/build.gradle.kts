@@ -58,6 +58,19 @@ ksp {
     arg("room.incremental", "true")
 }
 
+// compileSdk 36 / AGP 8.13 の組み合わせで解決できる範囲に androidx を揃える。
+// 2026 年以降の androidx.core 1.19+ / lifecycle 2.11+ は compileSdk 37 と AGP 9.1 を要求するため、
+// 推移的依存で引き上げられないよう固定する。
+configurations.all {
+    resolutionStrategy.eachDependency {
+        when (requested.group) {
+            "androidx.core" -> if (requested.name == "core" || requested.name == "core-ktx") useVersion(libs.versions.coreKtx.get())
+            "androidx.lifecycle" -> useVersion(libs.versions.lifecycle.get())
+            "androidx.activity" -> useVersion(libs.versions.activityCompose.get())
+        }
+    }
+}
+
 dependencies {
     implementation(project(":core"))
 

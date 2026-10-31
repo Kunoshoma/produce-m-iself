@@ -111,3 +111,33 @@ interface ActiveLessonDao {
     @Query("UPDATE active_lesson SET derailCount = derailCount + 1 WHERE id = 1")
     suspend fun incrementDerail()
 }
+
+@Dao
+interface BlockedAppDao {
+    @Query("SELECT * FROM blocked_apps ORDER BY label")
+    fun observeAll(): Flow<List<BlockedAppEntity>>
+
+    @Query("SELECT packageName FROM blocked_apps WHERE enabled = 1")
+    fun observeEnabledPackages(): Flow<List<String>>
+
+    @Query("SELECT COUNT(*) FROM blocked_apps")
+    suspend fun count(): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(e: BlockedAppEntity)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertAllIgnore(e: List<BlockedAppEntity>)
+
+    @Query("DELETE FROM blocked_apps WHERE packageName = :packageName")
+    suspend fun delete(packageName: String)
+}
+
+@Dao
+interface ServiceGapDao {
+    @Query("SELECT * FROM service_gaps WHERE endedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
+    suspend fun open(): ServiceGapEntity?
+
+    @Query("SELECT * FROM service_gaps WHERE startedAt >= :from OR endedAt IS NULL ORDER BY startedAt")
+    suspend fun since(from: java.time.Instant): List<ServiceGapEntity>
+
+    @Insert suspend fun insert(e: ServiceGapEntity): Long
+    @Update suspend fun update(e: ServiceGapEntity)
+}

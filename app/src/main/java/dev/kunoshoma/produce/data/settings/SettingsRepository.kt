@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.kunoshoma.produce.core.model.Axis
+import dev.kunoshoma.produce.core.rules.QuietHours
 import dev.kunoshoma.produce.core.rules.RankThresholds
 import dev.kunoshoma.produce.core.rules.StaminaConfig
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +32,11 @@ data class Settings(
     val spChance: Double = 0.15,
     val axisLabels: Map<Axis, String> = Axis.entries.associateWith { it.defaultLabel },
     val onboardingDone: Boolean = false,
+    /** 割り込み（娯楽アプリ検知）を使うか。アクセシビリティ権限の ON/OFF とは別のアプリ内スイッチ。 */
+    val interruptEnabled: Boolean = true,
+    val quietHours: QuietHours = QuietHours(),
+    val bypassMinutes: Int = 5,
+    val bypassesPerDay: Int = 3,
 ) {
     fun label(axis: Axis): String = axisLabels[axis] ?: axis.defaultLabel
 }
@@ -54,6 +60,12 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
         val redraws = intPreferencesKey("redraws")
         val spChance = doublePreferencesKey("sp_chance")
         val onboardingDone = booleanPreferencesKey("onboarding_done")
+        val interruptEnabled = booleanPreferencesKey("interrupt_enabled")
+        val quietEnabled = booleanPreferencesKey("quiet_enabled")
+        val quietStart = intPreferencesKey("quiet_start")
+        val quietEnd = intPreferencesKey("quiet_end")
+        val bypassMinutes = intPreferencesKey("bypass_minutes")
+        val bypassesPerDay = intPreferencesKey("bypasses_per_day")
         fun axisLabel(axis: Axis) = stringPreferencesKey("axis_label_${axis.name}")
     }
 
@@ -83,6 +95,16 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
             spChance = p[Keys.spChance] ?: d.spChance,
             axisLabels = Axis.entries.associateWith { a -> p[Keys.axisLabel(a)]?.takeIf { it.isNotBlank() } ?: a.defaultLabel },
             onboardingDone = p[Keys.onboardingDone] ?: false,
+            interruptEnabled = p[Keys.interruptEnabled] ?: d.interruptEnabled,
+            quietHours = runCatching {
+                QuietHours(
+                    enabled = p[Keys.quietEnabled] ?: d.quietHours.enabled,
+                    startHour = p[Keys.quietStart] ?: d.quietHours.startHour,
+                    endHour = p[Keys.quietEnd] ?: d.quietHours.endHour,
+                )
+            }.getOrDefault(d.quietHours),
+            bypassMinutes = p[Keys.bypassMinutes] ?: d.bypassMinutes,
+            bypassesPerDay = p[Keys.bypassesPerDay] ?: d.bypassesPerDay,
         )
     }
 
@@ -106,6 +128,12 @@ class SettingsRepository @Inject constructor(@ApplicationContext private val con
             p[Keys.redraws] = next.redrawsPerDay
             p[Keys.spChance] = next.spChance
             p[Keys.onboardingDone] = next.onboardingDone
+            p[Keys.interruptEnabled] = next.interruptEnabled
+            p[Keys.quietEnabled] = next.quietHours.enabled
+            p[Keys.quietStart] = next.quietHours.startHour
+            p[Keys.quietEnd] = next.quietHours.endHour
+            p[Keys.bypassMinutes] = next.bypassMinutes
+            p[Keys.bypassesPerDay] = next.bypassesPerDay
             Axis.entries.forEach { a -> p[Keys.axisLabel(a)] = next.label(a) }
         }
     }

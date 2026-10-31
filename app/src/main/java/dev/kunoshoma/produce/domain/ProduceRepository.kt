@@ -22,6 +22,10 @@ import dev.kunoshoma.produce.data.db.ActionTemplateDao
 import dev.kunoshoma.produce.data.db.ActionTemplateEntity
 import dev.kunoshoma.produce.data.db.ActiveLessonDao
 import dev.kunoshoma.produce.data.db.ActiveLessonEntity
+import dev.kunoshoma.produce.data.db.BlockedAppDao
+import dev.kunoshoma.produce.data.db.BlockedAppEntity
+import dev.kunoshoma.produce.data.db.ServiceGapDao
+import dev.kunoshoma.produce.data.db.ServiceGapEntity
 import dev.kunoshoma.produce.data.db.DayKind
 import dev.kunoshoma.produce.data.db.DayStateDao
 import dev.kunoshoma.produce.data.db.DayStateEntity
@@ -61,6 +65,8 @@ class ProduceRepository @Inject constructor(
     private val rests: RestLogDao,
     private val days: DayStateDao,
     private val active: ActiveLessonDao,
+    private val blockedApps: BlockedAppDao,
+    private val serviceGaps: ServiceGapDao,
     private val settingsRepo: SettingsRepository,
     private val alarms: ProduceAlarms,
     private val clock: Clock,
@@ -77,6 +83,9 @@ class ProduceRepository @Inject constructor(
     // ---- 初期化 ----
 
     suspend fun seedIfEmpty() {
+        if (blockedApps.count() == 0) {
+            blockedApps.insertAllIgnore(DEFAULT_BLOCKED.map { (pkg, label) -> BlockedAppEntity(pkg, label, enabled = true) })
+        }
         if (templates.count() > 0) return
         val now = now()
         templates.insertAll(
@@ -346,14 +355,14 @@ class ProduceRepository @Inject constructor(
 
     // ---- 休む ----
 
-    suspend fun startRest(minutes: Int): RestLogEntity = mutex.withLock {
+    suspend fun startRest(minutes: Int, packageName: String? = null): RestLogEntity = mutex.withLock {
         val date = today()
         val day = ensureDay(date)
         day.activeRestLogId?.let { rests.byId(it) }?.let { return it }
         val start = now()
         val entry = RestLogEntity(
             produceDate = date, startedAt = start, endedAt = null, allowedMin = minutes,
-            actualMin = null, staminaRecovered = 0, kind = RestKind.REST,
+            actualMin = null, staminaRecovered = 0, kind = RestKind.REST, packageName = packageName,
         )
         val id = rests.insert(entry)
         days.upsert(day.copy(activeRestLogId = id))
@@ -440,6 +449,44 @@ class ProduceRepository @Inject constructor(
         )
     }
 
+    // ---- 割り込み関連 ----
+
+    fun observeBlockedApps(): Flow<List<BlockedAppEntity>> = blockedApps.observeAll()
+    fun observeBlockedPackages(): Flow<List<String>> = blockedApps.observeEnabledPackages()
+    suspend fun setBlocked(packageName: String, label: String, blocked: Boolean) {
+        if (blocked) blockedApps.upsert(BlockedAppEntity(packageName, label, enabled = true)) else blockedApps.delete(packageName)
+    }
+
+    /** 緊急バイパス（SPEC 4.2）。残り回数がなければ null。 */
+    suspend fun startBypass(packageName: String?): Instant? = mutex.withLock {
+        val s = settingsRepo.current()
+        val date = today()
+        val day = ensureDay(date)
+        if (day.bypassesUsed >= s.bypassesPerDay) return null
+        val start = now()
+        val until = start.plus(s.bypassMinutes.toLong(), ChronoUnit.MINUTES)
+        rests.insert(
+            RestLogEntity(
+                produceDate = date, startedAt = start, endedAt = until, allowedMin = s.bypassMinutes,
+                actualMin = s.bypassMinutes, staminaRecovered = 0, kind = RestKind.BYPASS, packageName = packageName,
+            ),
+        )
+        days.upsert(day.copy(bypassesUsed = day.bypassesUsed + 1, bypassUntil = until))
+        until
+    }
+
+    /** サービス接続：開いている停止区間を閉じる。 */
+    suspend fun markServiceConnected() {
+        serviceGaps.open()?.let { serviceGaps.update(it.copy(endedAt = now())) }
+    }
+
+    /** サービス切断：停止区間を開く。 */
+    suspend fun markServiceDisconnected() {
+        if (serviceGaps.open() == null) serviceGaps.insert(ServiceGapEntity(startedAt = now(), endedAt = null))
+    }
+
+    suspend fun serviceGapsSince(from: Instant): List<ServiceGapEntity> = serviceGaps.since(from)
+
     // ---- テンプレート ----
 
     fun observeTemplates(): Flow<List<ActionTemplateEntity>> = templates.observeAll()
@@ -463,6 +510,13 @@ class ProduceRepository @Inject constructor(
         days.upsert(day.copy(stamina = (day.stamina + entry.staminaCost).coerceAtMost(s.stamina.max)))
     }
 }
+
+private val DEFAULT_BLOCKED = listOf(
+    "com.google.android.youtube" to "YouTube",
+    "com.twitter.android" to "X",
+    "com.zhiliaoapp.musically" to "TikTok",
+    "com.instagram.android" to "Instagram",
+)
 
 fun ActionTemplateEntity.toCore() = dev.kunoshoma.produce.core.model.ActionTemplate(
     id = id, name = name, axis = axis, durationMin = durationMin, staminaCost = staminaCost,

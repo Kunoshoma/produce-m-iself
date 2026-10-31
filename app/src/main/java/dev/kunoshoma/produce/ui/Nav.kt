@@ -8,6 +8,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import dev.kunoshoma.produce.ui.actions.ActionEditScreen
 import dev.kunoshoma.produce.ui.actions.ActionsScreen
+import dev.kunoshoma.produce.ui.blocked.BlockedAppsScreen
 import dev.kunoshoma.produce.ui.home.HomeScreen
 import dev.kunoshoma.produce.ui.lesson.LessonScreen
 import dev.kunoshoma.produce.ui.manual.ManualLogScreen
@@ -24,6 +25,7 @@ object Routes {
     const val ACTION_EDIT = "action_edit/{id}"
     const val MANUAL = "manual"
     const val SETTINGS = "settings"
+    const val BLOCKED_APPS = "blocked_apps"
 
     fun actionEdit(id: Long) = "action_edit/$id"
 }
@@ -72,7 +74,10 @@ fun ProduceNavHost(nav: NavHostController) {
             ManualLogScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.SETTINGS) {
-            SettingsScreen(onBack = { nav.popBackStack() })
+            SettingsScreen(onBack = { nav.popBackStack() }, onBlockedApps = { nav.navigate(Routes.BLOCKED_APPS) })
+        }
+        composable(Routes.BLOCKED_APPS) {
+            BlockedAppsScreen(onBack = { nav.popBackStack() })
         }
     }
 }
