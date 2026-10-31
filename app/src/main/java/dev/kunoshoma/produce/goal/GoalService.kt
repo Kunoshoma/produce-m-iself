@@ -124,7 +124,8 @@ class GoalService @Inject constructor(
     }
 
     /** 現時点の逆算（抜き打ち試験）。 */
-    suspend fun evaluate(g: GoalWithTargets, date: LocalDate = today()): GoalEvaluation {
+    suspend fun evaluate(g: GoalWithTargets, asOf: LocalDate? = null): GoalEvaluation {
+        val date = asOf ?: today()
         val settings = settingsRepo.current()
         val start = g.goal.startDate
         val end = minOf(date, g.goal.deadline)
