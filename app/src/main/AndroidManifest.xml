@@ -43,7 +43,6 @@
             android:exported="false"
             android:launchMode="singleInstance"
             android:noHistory="true"
-            android:showOnLockScreen="false"
             android:taskAffinity="dev.kunoshoma.produce.interrupt"
             android:theme="@style/Theme.Produce" />
 

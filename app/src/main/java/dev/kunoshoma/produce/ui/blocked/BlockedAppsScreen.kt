@@ -2,7 +2,6 @@ package dev.kunoshoma.produce.ui.blocked
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -73,10 +72,11 @@ class BlockedAppsViewModel @Inject constructor(
         }
     }
 
+    @Suppress("DEPRECATION") // ResolveInfoFlags は API 33+。minSdk 31 なので旧 API を使う。
     private fun loadLaunchable(): List<Pair<String, String>> {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        return pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
+        return pm.queryIntentActivities(intent, 0)
             .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
             .filter { it.first != context.packageName }
             .distinctBy { it.first }
