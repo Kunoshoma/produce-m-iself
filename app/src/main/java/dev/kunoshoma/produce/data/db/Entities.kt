@@ -136,3 +136,24 @@ data class ActiveLessonEntity(
     val isSp: Boolean,
     val derailCount: Int = 0,
 )
+
+/** 日次レポート（SPEC 5.1）。内容は core の DailyReport を JSON 化して保存。 */
+@Entity(tableName = "daily_reports")
+data class DailyReportEntity(
+    @PrimaryKey val date: LocalDate,
+    val totalGain: Int,
+    val json: String,
+    val createdAt: Instant,
+    val notified: Boolean = false,
+)
+
+/** 週次レポート（SPEC 5.2）。 */
+@Entity(tableName = "weekly_reports")
+data class WeeklyReportEntity(
+    @PrimaryKey val weekStart: LocalDate,
+    val rank: String,
+    val total: Int,
+    val json: String,
+    val createdAt: Instant,
+    val notified: Boolean = false,
+)

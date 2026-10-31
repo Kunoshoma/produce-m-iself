@@ -13,6 +13,9 @@ import dev.kunoshoma.produce.ui.home.HomeScreen
 import dev.kunoshoma.produce.ui.lesson.LessonScreen
 import dev.kunoshoma.produce.ui.manual.ManualLogScreen
 import dev.kunoshoma.produce.ui.produce.ProduceScreen
+import dev.kunoshoma.produce.ui.reports.DailyReportScreen
+import dev.kunoshoma.produce.ui.reports.ReportsScreen
+import dev.kunoshoma.produce.ui.reports.WeeklyReportScreen
 import dev.kunoshoma.produce.ui.result.ResultScreen
 import dev.kunoshoma.produce.ui.settings.SettingsScreen
 
@@ -26,6 +29,12 @@ object Routes {
     const val MANUAL = "manual"
     const val SETTINGS = "settings"
     const val BLOCKED_APPS = "blocked_apps"
+    const val REPORTS = "reports"
+    const val DAILY_REPORT = "report/daily/{date}"
+    const val WEEKLY_REPORT = "report/weekly/{weekStart}"
+
+    fun dailyReport(date: String) = "report/daily/$date"
+    fun weeklyReport(weekStart: String) = "report/weekly/$weekStart"
 
     fun actionEdit(id: Long) = "action_edit/$id"
 }
@@ -40,6 +49,7 @@ fun ProduceNavHost(nav: NavHostController) {
                 onManual = { nav.navigate(Routes.MANUAL) },
                 onActions = { nav.navigate(Routes.ACTIONS) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
+                onReports = { nav.navigate(Routes.REPORTS) },
             )
         }
         composable(Routes.PRODUCE) {
@@ -78,6 +88,19 @@ fun ProduceNavHost(nav: NavHostController) {
         }
         composable(Routes.BLOCKED_APPS) {
             BlockedAppsScreen(onBack = { nav.popBackStack() })
+        }
+        composable(Routes.REPORTS) {
+            ReportsScreen(
+                onBack = { nav.popBackStack() },
+                onDaily = { nav.navigate(Routes.dailyReport(it)) },
+                onWeekly = { nav.navigate(Routes.weeklyReport(it)) },
+            )
+        }
+        composable(Routes.DAILY_REPORT, arguments = listOf(navArgument("date") { type = NavType.StringType })) { entry ->
+            DailyReportScreen(date = entry.arguments?.getString("date") ?: "", onBack = { nav.popBackStack() })
+        }
+        composable(Routes.WEEKLY_REPORT, arguments = listOf(navArgument("weekStart") { type = NavType.StringType })) { entry ->
+            WeeklyReportScreen(weekStart = entry.arguments?.getString("weekStart") ?: "", onBack = { nav.popBackStack() })
         }
     }
 }

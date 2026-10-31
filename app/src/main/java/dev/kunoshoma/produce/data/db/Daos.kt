@@ -56,6 +56,15 @@ interface ActionLogDao {
     @Query("SELECT COUNT(*) FROM action_logs WHERE produceDate = :date")
     suspend fun countOn(date: LocalDate): Int
 
+    @Query("SELECT produceDate, axis, COALESCE(SUM(gain), 0) AS total FROM action_logs WHERE produceDate BETWEEN :from AND :to GROUP BY produceDate, axis")
+    suspend fun dailyGains(from: LocalDate, to: LocalDate): List<DateAxisGain>
+
+    @Query("SELECT axis, COALESCE(SUM(gain), 0) AS total FROM action_logs WHERE produceDate <= :date GROUP BY axis")
+    suspend fun totalsUpTo(date: LocalDate): List<AxisGain>
+
+    @Query("SELECT MIN(produceDate) FROM action_logs")
+    suspend fun firstDate(): LocalDate?
+
     @Query("SELECT * FROM action_logs WHERE id = :id")
     suspend fun byId(id: Long): ActionLogEntity?
 
@@ -91,6 +100,9 @@ interface DayStateDao {
 
     @Query("SELECT * FROM day_states WHERE date BETWEEN :from AND :to")
     suspend fun between(from: LocalDate, to: LocalDate): List<DayStateEntity>
+
+    @Query("SELECT MIN(date) FROM day_states")
+    suspend fun firstDate(): LocalDate?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(e: DayStateEntity)
 }
@@ -141,3 +153,42 @@ interface ServiceGapDao {
     @Insert suspend fun insert(e: ServiceGapEntity): Long
     @Update suspend fun update(e: ServiceGapEntity)
 }
+
+@Dao
+interface DailyReportDao {
+    @Query("SELECT * FROM daily_reports ORDER BY date DESC")
+    fun observeAll(): Flow<List<DailyReportEntity>>
+
+    @Query("SELECT * FROM daily_reports WHERE date = :date")
+    suspend fun byDate(date: LocalDate): DailyReportEntity?
+
+    @Query("SELECT * FROM daily_reports WHERE date = :date")
+    fun observe(date: LocalDate): Flow<DailyReportEntity?>
+
+    @Query("SELECT date FROM daily_reports")
+    suspend fun dates(): List<LocalDate>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(e: DailyReportEntity)
+
+    @Query("UPDATE daily_reports SET notified = 1 WHERE date = :date")
+    suspend fun markNotified(date: LocalDate)
+}
+
+@Dao
+interface WeeklyReportDao {
+    @Query("SELECT * FROM weekly_reports ORDER BY weekStart DESC")
+    fun observeAll(): Flow<List<WeeklyReportEntity>>
+
+    @Query("SELECT * FROM weekly_reports WHERE weekStart = :weekStart")
+    suspend fun byWeek(weekStart: LocalDate): WeeklyReportEntity?
+
+    @Query("SELECT weekStart FROM weekly_reports")
+    suspend fun weeks(): List<LocalDate>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(e: WeeklyReportEntity)
+
+    @Query("UPDATE weekly_reports SET notified = 1 WHERE weekStart = :weekStart")
+    suspend fun markNotified(weekStart: LocalDate)
+}
+
+data class DateAxisGain(val produceDate: LocalDate, val axis: Axis, val total: Int)

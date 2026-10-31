@@ -13,6 +13,8 @@ import androidx.room.TypeConverters
         ActiveLessonEntity::class,
         BlockedAppEntity::class,
         ServiceGapEntity::class,
+        DailyReportEntity::class,
+        WeeklyReportEntity::class,
     ],
     version = 1,
     exportSchema = true,
@@ -26,4 +28,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun activeLesson(): ActiveLessonDao
     abstract fun blockedApps(): BlockedAppDao
     abstract fun serviceGaps(): ServiceGapDao
+    abstract fun dailyReports(): DailyReportDao
+    abstract fun weeklyReports(): WeeklyReportDao
 }

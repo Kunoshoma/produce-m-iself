@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
@@ -68,6 +69,7 @@ fun HomeScreen(
     onManual: () -> Unit,
     onActions: () -> Unit,
     onSettings: () -> Unit,
+    onReports: () -> Unit = {},
     vm: HomeViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -79,6 +81,7 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("プロデュース", fontWeight = FontWeight.Bold) },
                 actions = {
+                    IconButton(onClick = onReports) { Icon(Icons.Default.Assessment, contentDescription = "レポート") }
                     IconButton(onClick = onActions) { Icon(Icons.Default.Tune, contentDescription = "アクション管理") }
                     IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, contentDescription = "設定") }
                 },

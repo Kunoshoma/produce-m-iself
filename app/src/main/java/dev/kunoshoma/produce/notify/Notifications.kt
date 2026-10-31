@@ -47,23 +47,40 @@ class Notifications @Inject constructor(@ApplicationContext private val context:
         route = MainActivity.ROUTE_PRODUCE,
     )
 
+    fun dailyReport(dateLabel: String, totalGain: Int, comment: String) = post(
+        id = ID_DAILY,
+        title = "日次レポート：$dateLabel  +$totalGain",
+        text = comment,
+        route = MainActivity.ROUTE_REPORTS,
+        channel = CHANNEL_REPORT,
+    )
+
+    fun weeklyReport(rank: String, total: Int, comment: String) = post(
+        id = ID_WEEKLY,
+        title = "週次レポート：ランク $rank（$total pt）",
+        text = comment,
+        route = MainActivity.ROUTE_REPORTS,
+        channel = CHANNEL_REPORT,
+    )
+
     fun cancelLesson() = NotificationManagerCompat.from(context).cancel(ID_LESSON)
     fun cancelRest() = NotificationManagerCompat.from(context).cancel(ID_REST)
 
-    private fun post(id: Int, title: String, text: String, route: String) {
+    private fun post(id: Int, title: String, text: String, route: String, channel: String = CHANNEL_LESSON) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val intent = Intent(context, MainActivity::class.java)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra(MainActivity.EXTRA_ROUTE, route)
         val pi = PendingIntent.getActivity(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val n = NotificationCompat.Builder(context, CHANNEL_LESSON)
+        val n = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(pi)
             .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(if (channel == CHANNEL_LESSON) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(if (channel == CHANNEL_LESSON) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_STATUS)
             .build()
         NotificationManagerCompat.from(context).notify(id, n)
     }
@@ -73,5 +90,7 @@ class Notifications @Inject constructor(@ApplicationContext private val context:
         const val CHANNEL_REPORT = "report"
         const val ID_LESSON = 1
         const val ID_REST = 2
+        const val ID_DAILY = 3
+        const val ID_WEEKLY = 4
     }
 }

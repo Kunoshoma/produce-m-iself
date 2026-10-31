@@ -1,0 +1,185 @@
+package dev.kunoshoma.produce.report
+
+import dev.kunoshoma.produce.core.model.Axis
+import dev.kunoshoma.produce.core.report.DailyReport
+import dev.kunoshoma.produce.core.report.DayFacts
+import dev.kunoshoma.produce.core.report.LessonRecord
+import dev.kunoshoma.produce.core.report.ReportBuilder
+import dev.kunoshoma.produce.core.report.RestRecord
+import dev.kunoshoma.produce.core.report.RestType
+import dev.kunoshoma.produce.core.report.WeeklyReport
+import dev.kunoshoma.produce.core.rules.DayActivity
+import dev.kunoshoma.produce.core.rules.StreakRules
+import dev.kunoshoma.produce.core.time.ProduceCalendar
+import dev.kunoshoma.produce.data.db.ActionLogDao
+import dev.kunoshoma.produce.data.db.ActionLogEntity
+import dev.kunoshoma.produce.data.db.DailyReportDao
+import dev.kunoshoma.produce.data.db.DailyReportEntity
+import dev.kunoshoma.produce.data.db.DayKind
+import dev.kunoshoma.produce.data.db.DayStateDao
+import dev.kunoshoma.produce.data.db.RestKind
+import dev.kunoshoma.produce.data.db.RestLogDao
+import dev.kunoshoma.produce.data.db.RestLogEntity
+import dev.kunoshoma.produce.data.db.ServiceGapDao
+import dev.kunoshoma.produce.data.db.WeeklyReportDao
+import dev.kunoshoma.produce.data.db.WeeklyReportEntity
+import dev.kunoshoma.produce.data.settings.SettingsRepository
+import dev.kunoshoma.produce.notify.Notifications
+import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.Json
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/** 日次・週次レポートの生成・保存・通知（SPEC 5）。計算は core の ReportBuilder に委譲。 */
+@Singleton
+class ReportService @Inject constructor(
+    private val logs: ActionLogDao,
+    private val rests: RestLogDao,
+    private val days: DayStateDao,
+    private val gaps: ServiceGapDao,
+    private val dailyDao: DailyReportDao,
+    private val weeklyDao: WeeklyReportDao,
+    private val settingsRepo: SettingsRepository,
+    private val notifications: Notifications,
+    private val clock: Clock,
+) {
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    fun observeDaily(): Flow<List<DailyReportEntity>> = dailyDao.observeAll()
+    fun observeWeekly(): Flow<List<WeeklyReportEntity>> = weeklyDao.observeAll()
+    suspend fun daily(date: LocalDate): DailyReport? = dailyDao.byDate(date)?.let { json.decodeFromString(DailyReport.serializer(), it.json) }
+    suspend fun weekly(weekStart: LocalDate): WeeklyReport? = weeklyDao.byWeek(weekStart)?.let { json.decodeFromString(WeeklyReport.serializer(), it.json) }
+
+    private suspend fun calendar(): ProduceCalendar = ProduceCalendar(clock.zone, settingsRepo.current().dayBoundaryHour)
+
+    /**
+     * 未生成の日次（昨日まで）と週次（終わった週）をまとめて作る。
+     * 端末が落ちていた日も後から埋める（SPEC 5.3）。
+     */
+    suspend fun backfill(notify: Boolean) {
+        val cal = calendar()
+        val today = cal.produceDate(clock.instant())
+        val first = listOfNotNull(days.firstDate(), logs.firstDate()).minOrNull() ?: return
+        val haveDaily = dailyDao.dates().toSet()
+        var d = first
+        var newestDaily: DailyReportEntity? = null
+        while (d.isBefore(today)) {
+            if (d !in haveDaily) newestDaily = generateDaily(d, force = false)
+            d = d.plusDays(1)
+        }
+        val haveWeekly = weeklyDao.weeks().toSet()
+        var w = cal.weekStart(first)
+        var newestWeekly: WeeklyReportEntity? = null
+        while (cal.weekEnd(w).isBefore(today)) {
+            if (w !in haveWeekly) newestWeekly = generateWeekly(w)
+            w = w.plusWeeks(1)
+        }
+        if (!notify) return
+        // 通知は直近のものだけ。古い分はまとめて作っても鳴らさない。
+        newestDaily?.takeIf { it.date == today.minusDays(1) && !it.notified }?.let { e ->
+            val r = json.decodeFromString(DailyReport.serializer(), e.json)
+            notifications.dailyReport(e.date.format(DateTimeFormatter.ofPattern("M/d")), r.totalGain, r.comment)
+            dailyDao.markNotified(e.date)
+        }
+        newestWeekly?.takeIf { !it.notified && cal.weekEnd(it.weekStart) == today.minusDays(1) }?.let { e ->
+            val r = json.decodeFromString(WeeklyReport.serializer(), e.json)
+            notifications.weeklyReport(e.rank, e.total, r.comment)
+            weeklyDao.markNotified(e.weekStart)
+        }
+    }
+
+    /** 指定日の日次レポートを生成して保存。[force] が false で既にあればそれを返す。 */
+    suspend fun generateDaily(date: LocalDate, force: Boolean): DailyReportEntity {
+        if (!force) dailyDao.byDate(date)?.let { return it }
+        val settings = settingsRepo.current()
+        val cal = ProduceCalendar(clock.zone, settings.dayBoundaryHour)
+        val day = days.byDate(date)
+        val lessons = logs.between(date, date).map { it.toRecord() }
+        val restRecords = rests.between(date, date).map { it.toRecord() }
+        val totals = logs.totalsUpTo(date).associate { it.axis to it.total }
+        val streak = streakThrough(date)
+        val gapMinutes = gapMinutes(cal.dayStart(date), cal.dayStart(date.plusDays(1)))
+        val facts = DayFacts(
+            date = date,
+            isOffDay = day?.kind == DayKind.OFF,
+            staminaStart = day?.staminaStart ?: settings.stamina.max,
+            staminaEnd = day?.stamina ?: settings.stamina.max,
+            monitoringGapMinutes = gapMinutes,
+        )
+        val report = ReportBuilder.daily(facts, lessons, restRecords, totals, streak, axisLabel = { settings.label(it) })
+        val entity = DailyReportEntity(
+            date = date, totalGain = report.totalGain, json = json.encodeToString(DailyReport.serializer(), report),
+            createdAt = clock.instant(), notified = dailyDao.byDate(date)?.notified ?: false,
+        )
+        dailyDao.upsert(entity)
+        return entity
+    }
+
+    suspend fun generateWeekly(weekStart: LocalDate): WeeklyReportEntity {
+        val settings = settingsRepo.current()
+        val weekEnd = weekStart.plusDays(6)
+        val lessons = logs.between(weekStart, weekEnd).map { it.toRecord() }
+        val prev = logs.between(weekStart.minusWeeks(1), weekStart.minusDays(1)).map { it.toRecord() }
+        val restRecords = rests.between(weekStart, weekEnd).map { it.toRecord() }
+        val dayStates = days.between(weekStart, weekEnd).associateBy { it.date }
+        val facts = (0..6).map { i ->
+            val d = weekStart.plusDays(i.toLong())
+            val s = dayStates[d]
+            DayFacts(d, s?.kind == DayKind.OFF, s?.staminaStart ?: settings.stamina.max, s?.stamina ?: settings.stamina.max)
+        }
+        val report = ReportBuilder.weekly(weekStart, facts, lessons, restRecords, prev, settings.rank, axisLabel = { settings.label(it) })
+        val entity = WeeklyReportEntity(
+            weekStart = weekStart, rank = report.rank.name, total = report.total,
+            json = json.encodeToString(WeeklyReport.serializer(), report), createdAt = clock.instant(),
+            notified = weeklyDao.byWeek(weekStart)?.notified ?: false,
+        )
+        weeklyDao.upsert(entity)
+        return entity
+    }
+
+    /** 直近 30 日の軸別獲得（グラフ用）。 */
+    suspend fun dailyGains(daysBack: Int): Map<LocalDate, Map<Axis, Int>> {
+        val cal = calendar()
+        val today = cal.produceDate(clock.instant())
+        val from = today.minusDays(daysBack.toLong() - 1)
+        val rows = logs.dailyGains(from, today)
+        return (0 until daysBack).associate { i ->
+            val d = from.plusDays(i.toLong())
+            d to Axis.entries.associateWith { a -> rows.firstOrNull { it.produceDate == d && it.axis == a }?.total ?: 0 }
+        }
+    }
+
+    private suspend fun streakThrough(date: LocalDate): Int {
+        val from = date.minusDays(90)
+        val counts = logs.lessonCounts(from, date).associate { it.produceDate to it.lessons }
+        val offs = days.between(from, date).filter { it.kind == DayKind.OFF }.map { it.date }.toSet()
+        val activities = (counts.keys + offs).map { d -> DayActivity(d, counts[d] ?: 0, d in offs) }
+        return StreakRules.consecutiveDays(activities, date)
+    }
+
+    private suspend fun gapMinutes(from: Instant, to: Instant): Int {
+        val now = clock.instant()
+        return gaps.since(from).sumOf { g ->
+            val s = maxOf(g.startedAt, from)
+            val e = minOf(g.endedAt ?: now, to)
+            if (e.isAfter(s)) Duration.between(s, e).toMinutes().toInt() else 0
+        }
+    }
+
+    private fun ActionLogEntity.toRecord() = LessonRecord(
+        date = produceDate, name = templateName, axis = axis, gain = gain, result = result,
+        failReasons = failReasons, durationMin = plannedDurationMin, isSp = isSp,
+    )
+
+    private fun RestLogEntity.toRecord() = RestRecord(
+        date = produceDate,
+        minutes = actualMin ?: allowedMin,
+        type = when (kind) { RestKind.REST -> RestType.REST; RestKind.BYPASS -> RestType.BYPASS; RestKind.SELF_REPORT -> RestType.SELF_REPORT },
+        recovered = staminaRecovered,
+    )
+}

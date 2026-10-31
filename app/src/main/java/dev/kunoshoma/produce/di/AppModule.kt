@@ -29,6 +29,8 @@ object AppModule {
     @Provides fun activeLesson(db: AppDatabase) = db.activeLesson()
     @Provides fun blockedApps(db: AppDatabase) = db.blockedApps()
     @Provides fun serviceGaps(db: AppDatabase) = db.serviceGaps()
+    @Provides fun dailyReports(db: AppDatabase) = db.dailyReports()
+    @Provides fun weeklyReports(db: AppDatabase) = db.weeklyReports()
 
     @Provides
     @Singleton
