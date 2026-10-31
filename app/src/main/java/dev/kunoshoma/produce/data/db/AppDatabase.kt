@@ -15,6 +15,9 @@ import androidx.room.TypeConverters
         ServiceGapEntity::class,
         DailyReportEntity::class,
         WeeklyReportEntity::class,
+        GoalEntity::class,
+        GoalTargetEntity::class,
+        ExamResultEntity::class,
     ],
     version = 1,
     exportSchema = true,
@@ -30,4 +33,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun serviceGaps(): ServiceGapDao
     abstract fun dailyReports(): DailyReportDao
     abstract fun weeklyReports(): WeeklyReportDao
+    abstract fun goals(): GoalDao
+    abstract fun examResults(): ExamResultDao
 }

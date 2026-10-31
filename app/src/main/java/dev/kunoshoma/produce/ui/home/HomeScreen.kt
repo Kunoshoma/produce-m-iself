@@ -1,6 +1,10 @@
 package dev.kunoshoma.produce.ui.home
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -70,6 +74,7 @@ fun HomeScreen(
     onActions: () -> Unit,
     onSettings: () -> Unit,
     onReports: () -> Unit = {},
+    onGoal: () -> Unit = {},
     vm: HomeViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -102,6 +107,7 @@ fun HomeScreen(
         ) {
             item { StatusCard(s) }
             item { TodayCard(s) }
+            item { GoalCard(s, onGoal) }
             if (s.shouldAskSleep) item { SleepAskCard(onPick = vm::reportSleep) }
             s.activeLesson?.let { lesson ->
                 item {
@@ -217,6 +223,40 @@ private fun TodayCard(s: HomeState) {
         }
         if (s.day.honestyBonusPending) {
             Text("正直ボーナス：次の 1 回は獲得 +10%", color = StaminaGreen, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun GoalCard(s: HomeState, onGoal: () -> Unit) {
+    val g = s.goal
+    ProduceCard(Modifier.clickable(onClick = onGoal)) {
+        if (g == null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("中期目標", fontWeight = FontWeight.Bold)
+                    Text("目標を置くと週ごとに中間試験が走って、足りない分を逆算してくれる", style = MaterialTheme.typography.bodySmall)
+                }
+                Text("設定 →", color = Accent)
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(g.name, fontWeight = FontWeight.Bold)
+                    Text("あと ${g.daysLeft} 日 ・ 進捗 ${(g.progressRatio * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
+                }
+                Pill(g.overall.label, g.overall.color())
+            }
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = { g.progressRatio.toFloat() },
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                color = Accent,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(g.summaryLine, style = MaterialTheme.typography.bodySmall)
+            if (!g.feasible) Text("このペースは体力的に厳しい。目標画面で調整を", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
     }
 }

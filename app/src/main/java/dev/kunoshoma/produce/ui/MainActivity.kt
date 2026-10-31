@@ -68,5 +68,6 @@ class MainActivity : ComponentActivity() {
         const val ROUTE_PRODUCE = Routes.PRODUCE
         const val ROUTE_REPORTS = Routes.REPORTS
         const val ROUTE_SETTINGS = Routes.SETTINGS
+        const val ROUTE_GOAL = Routes.GOAL
     }
 }

@@ -63,6 +63,14 @@ class Notifications @Inject constructor(@ApplicationContext private val context:
         channel = CHANNEL_REPORT,
     )
 
+    fun exam(title: String, text: String) = post(
+        id = ID_EXAM,
+        title = title,
+        text = text,
+        route = MainActivity.ROUTE_GOAL,
+        channel = CHANNEL_REPORT,
+    )
+
     fun serviceDown() = post(
         id = ID_SERVICE,
         title = "割り込みが止まってるよ",
@@ -101,5 +109,6 @@ class Notifications @Inject constructor(@ApplicationContext private val context:
         const val ID_DAILY = 3
         const val ID_WEEKLY = 4
         const val ID_SERVICE = 5
+        const val ID_EXAM = 6
     }
 }

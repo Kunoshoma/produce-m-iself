@@ -36,6 +36,7 @@ import dev.kunoshoma.produce.data.db.RestLogDao
 import dev.kunoshoma.produce.data.db.RestLogEntity
 import dev.kunoshoma.produce.data.settings.Settings
 import dev.kunoshoma.produce.data.settings.SettingsRepository
+import dev.kunoshoma.produce.goal.GoalService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -69,6 +70,7 @@ class ProduceRepository @Inject constructor(
     private val blockedApps: BlockedAppDao,
     private val serviceGaps: ServiceGapDao,
     private val settingsRepo: SettingsRepository,
+    private val goalService: GoalService,
     private val alarms: ProduceAlarms,
     private val clock: Clock,
 ) {
@@ -155,6 +157,7 @@ class ProduceRepository @Inject constructor(
             rests.observeByDate(date),
             combine(logs.observeTotals(), logs.observeTotalsBetween(date, date), logs.observeTotalsBetween(weekStart, date)) { a, b, c -> Triple(a, b, c) },
             active.observe(),
+            goalService.observeActive(),
         ) { arr ->
             @Suppress("UNCHECKED_CAST")
             val day = (arr[0] as DayStateEntity?) ?: ensureToday()
@@ -170,6 +173,7 @@ class ProduceRepository @Inject constructor(
             val todayGains = gainTriple.second
             val weekGains = gainTriple.third
             val activeLesson = arr[5] as ActiveLessonEntity?
+            val goal = (arr[6] as dev.kunoshoma.produce.data.db.GoalWithTargets?)?.let { g -> runCatching { goalService.evaluate(g, date) }.getOrNull() }
 
             val streak = streakInfo(date, day, todayLogs.size)
             val prev = days.latestBefore(date)
@@ -194,6 +198,7 @@ class ProduceRepository @Inject constructor(
                 isClosed = day.closedAt != null,
                 shouldAskSleep = day.sleepBucket == null && prev?.closedAt != null && prev.date == date.minusDays(1) &&
                     todayLogs.isEmpty() && todayRests.isEmpty(),
+                goal = goal,
             )
         }
     }
@@ -228,6 +233,7 @@ class ProduceRepository @Inject constructor(
             stamina = day.stamina,
             dayPart = calendar(s).dayPart(now()),
             axesDoneToday = todayLogs.map { it.axis }.toSet(),
+            axisBias = runCatching { goalService.currentAxisBias() }.getOrDefault(emptyMap()),
             themeAxis = day.themeAxis,
             restMinuteOptions = s.restMinuteOptions,
             restRecoveryAvailable = day.restRecoveredToday < s.stamina.restDailyCap && day.stamina < s.stamina.highThreshold,

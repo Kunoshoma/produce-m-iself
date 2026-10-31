@@ -24,6 +24,7 @@ import dev.kunoshoma.produce.data.db.ServiceGapDao
 import dev.kunoshoma.produce.data.db.WeeklyReportDao
 import dev.kunoshoma.produce.data.db.WeeklyReportEntity
 import dev.kunoshoma.produce.data.settings.SettingsRepository
+import dev.kunoshoma.produce.goal.GoalService
 import dev.kunoshoma.produce.notify.Notifications
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
@@ -46,6 +47,7 @@ class ReportService @Inject constructor(
     private val weeklyDao: WeeklyReportDao,
     private val settingsRepo: SettingsRepository,
     private val notifications: Notifications,
+    private val goalService: GoalService,
     private val clock: Clock,
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -79,6 +81,12 @@ class ReportService @Inject constructor(
             if (w !in haveWeekly) newestWeekly = generateWeekly(w)
             w = w.plusWeeks(1)
         }
+        // 中期目標：期限を過ぎていれば最終試験、週が終わっていれば中間試験（SPEC 12.2）
+        runCatching { goalService.runFinalExamIfDue() }.getOrNull()?.takeIf { notify }?.let { e ->
+            notifications.exam(if (e.passed == true) "最終試験：合格！" else "最終試験：不合格", e.summary)
+        }
+        val lastWeekEnd = cal.weekEnd(cal.weekStart(today).minusWeeks(1))
+        runCatching { goalService.recordMidExam(lastWeekEnd) }
         if (!notify) return
         // 通知は直近のものだけ。古い分はまとめて作っても鳴らさない。
         newestDaily?.takeIf { it.date == today.minusDays(1) && !it.notified }?.let { e ->

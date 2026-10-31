@@ -140,6 +140,7 @@ class BackupManager @Inject constructor(
         val TABLES = listOf(
             "action_templates", "day_states", "action_logs", "rest_logs", "active_lesson",
             "blocked_apps", "service_gaps", "daily_reports", "weekly_reports",
+            "goals", "goal_targets", "exam_results",
         )
         fun suggestedFileName(): String = "produce-backup-${java.time.LocalDate.now()}.json"
     }

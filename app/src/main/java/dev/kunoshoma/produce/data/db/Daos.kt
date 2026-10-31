@@ -192,3 +192,52 @@ interface WeeklyReportDao {
 }
 
 data class DateAxisGain(val produceDate: LocalDate, val axis: Axis, val total: Int)
+
+data class GoalWithTargets(
+    @androidx.room.Embedded val goal: GoalEntity,
+    @androidx.room.Relation(parentColumn = "id", entityColumn = "goalId") val targets: List<GoalTargetEntity>,
+)
+
+@Dao
+interface GoalDao {
+    @androidx.room.Transaction
+    @Query("SELECT * FROM goals WHERE status = 'ACTIVE' ORDER BY createdAt DESC LIMIT 1")
+    fun observeActive(): Flow<GoalWithTargets?>
+
+    @androidx.room.Transaction
+    @Query("SELECT * FROM goals WHERE status = 'ACTIVE' ORDER BY createdAt DESC LIMIT 1")
+    suspend fun active(): GoalWithTargets?
+
+    @androidx.room.Transaction
+    @Query("SELECT * FROM goals WHERE id = :id")
+    suspend fun byId(id: Long): GoalWithTargets?
+
+    @androidx.room.Transaction
+    @Query("SELECT * FROM goals ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<GoalWithTargets>>
+
+    @Insert suspend fun insertGoal(e: GoalEntity): Long
+    @Update suspend fun updateGoal(e: GoalEntity)
+    @Insert suspend fun insertTargets(e: List<GoalTargetEntity>)
+    @Update suspend fun updateTarget(e: GoalTargetEntity)
+
+    @Query("SELECT * FROM goal_targets WHERE id = :id")
+    suspend fun target(id: Long): GoalTargetEntity?
+
+    @Query("SELECT COUNT(*) FROM action_logs WHERE templateId = :templateId AND produceDate BETWEEN :from AND :to")
+    suspend fun countActions(templateId: Long, from: LocalDate, to: LocalDate): Int
+
+    @Query("SELECT COALESCE(SUM(gain), 0) FROM action_logs WHERE axis = :axis AND produceDate BETWEEN :from AND :to")
+    suspend fun axisGain(axis: Axis, from: LocalDate, to: LocalDate): Int
+}
+
+@Dao
+interface ExamResultDao {
+    @Query("SELECT * FROM exam_results WHERE goalId = :goalId ORDER BY date DESC")
+    fun observeByGoal(goalId: Long): Flow<List<ExamResultEntity>>
+
+    @Query("SELECT * FROM exam_results WHERE goalId = :goalId AND kind = :kind AND date = :date LIMIT 1")
+    suspend fun find(goalId: Long, kind: ExamKind, date: LocalDate): ExamResultEntity?
+
+    @Insert suspend fun insert(e: ExamResultEntity): Long
+}

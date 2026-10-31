@@ -31,6 +31,8 @@ object AppModule {
     @Provides fun serviceGaps(db: AppDatabase) = db.serviceGaps()
     @Provides fun dailyReports(db: AppDatabase) = db.dailyReports()
     @Provides fun weeklyReports(db: AppDatabase) = db.weeklyReports()
+    @Provides fun goals(db: AppDatabase) = db.goals()
+    @Provides fun examResults(db: AppDatabase) = db.examResults()
 
     @Provides
     @Singleton

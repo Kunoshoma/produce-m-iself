@@ -157,3 +157,51 @@ data class WeeklyReportEntity(
     val createdAt: Instant,
     val notified: Boolean = false,
 )
+
+enum class GoalStatus { ACTIVE, PASSED, FAILED, ABANDONED }
+enum class TargetKind { AXIS, ACTION_COUNT, CHECKLIST }
+enum class ExamKind { MID, FINAL }
+
+/** 中期目標（SPEC 12.1）。同時に ACTIVE なのは 1 つ。 */
+@Entity(tableName = "goals")
+data class GoalEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val startDate: LocalDate,
+    val deadline: LocalDate,
+    val status: GoalStatus = GoalStatus.ACTIVE,
+    val note: String = "",
+    val createdAt: Instant,
+    val closedAt: Instant? = null,
+)
+
+/**
+ * 目標のターゲット。
+ * AXIS: ref = Axis 名、targetValue = 期間内の獲得量
+ * ACTION_COUNT: ref = templateId、targetValue = 回数
+ * CHECKLIST: ref = 項目名、targetValue = 1、checked で達成
+ */
+@Entity(tableName = "goal_targets", indices = [Index("goalId")])
+data class GoalTargetEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val goalId: Long,
+    val kind: TargetKind,
+    val ref: String,
+    val label: String,
+    val targetValue: Int,
+    val required: Boolean = true,
+    val checked: Boolean = false,
+)
+
+/** 試験の結果（SPEC 12.2 / 12.5）。json は GoalEvaluation のスナップショット。 */
+@Entity(tableName = "exam_results", indices = [Index("goalId")])
+data class ExamResultEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val goalId: Long,
+    val date: LocalDate,
+    val kind: ExamKind,
+    val passed: Boolean?,
+    val summary: String,
+    val json: String,
+    val createdAt: Instant,
+)

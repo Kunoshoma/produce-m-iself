@@ -8,6 +8,7 @@ import dev.kunoshoma.produce.data.db.ActiveLessonEntity
 import dev.kunoshoma.produce.data.db.DayStateEntity
 import dev.kunoshoma.produce.data.db.RestLogEntity
 import dev.kunoshoma.produce.data.settings.Settings
+import dev.kunoshoma.produce.goal.GoalEvaluation
 import java.time.LocalDate
 
 data class StreakInfo(
@@ -39,6 +40,8 @@ data class HomeState(
     val isClosed: Boolean,
     /** 睡眠時間の申告を促すべきか。 */
     val shouldAskSleep: Boolean,
+    /** 中期目標の現時点の評価。目標がなければ null。 */
+    val goal: GoalEvaluation? = null,
 ) {
     val redrawsLeft: Int get() = (settings.redrawsPerDay - day.redrawsUsed).coerceAtLeast(0)
     val weekTotal: Int get() = weekGains.values.sum()

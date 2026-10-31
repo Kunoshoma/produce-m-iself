@@ -9,6 +9,8 @@ import androidx.navigation.navArgument
 import dev.kunoshoma.produce.ui.actions.ActionEditScreen
 import dev.kunoshoma.produce.ui.actions.ActionsScreen
 import dev.kunoshoma.produce.ui.blocked.BlockedAppsScreen
+import dev.kunoshoma.produce.ui.goal.GoalCreateScreen
+import dev.kunoshoma.produce.ui.goal.GoalScreen
 import dev.kunoshoma.produce.ui.home.HomeScreen
 import dev.kunoshoma.produce.ui.lesson.LessonScreen
 import dev.kunoshoma.produce.ui.manual.ManualLogScreen
@@ -30,6 +32,8 @@ object Routes {
     const val SETTINGS = "settings"
     const val BLOCKED_APPS = "blocked_apps"
     const val REPORTS = "reports"
+    const val GOAL = "goal"
+    const val GOAL_CREATE = "goal/create"
     const val DAILY_REPORT = "report/daily/{date}"
     const val WEEKLY_REPORT = "report/weekly/{weekStart}"
 
@@ -50,6 +54,7 @@ fun ProduceNavHost(nav: NavHostController) {
                 onActions = { nav.navigate(Routes.ACTIONS) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
                 onReports = { nav.navigate(Routes.REPORTS) },
+                onGoal = { nav.navigate(Routes.GOAL) },
             )
         }
         composable(Routes.PRODUCE) {
@@ -88,6 +93,12 @@ fun ProduceNavHost(nav: NavHostController) {
         }
         composable(Routes.BLOCKED_APPS) {
             BlockedAppsScreen(onBack = { nav.popBackStack() })
+        }
+        composable(Routes.GOAL) {
+            GoalScreen(onBack = { nav.popBackStack() }, onCreate = { nav.navigate(Routes.GOAL_CREATE) })
+        }
+        composable(Routes.GOAL_CREATE) {
+            GoalCreateScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.REPORTS) {
             ReportsScreen(
