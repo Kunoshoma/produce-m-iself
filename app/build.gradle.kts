@@ -93,6 +93,8 @@ dependencies {
 
     implementation(libs.datastore.preferences)
     implementation(libs.work.runtime.ktx)
+    implementation(libs.glance.appwidget)
+    implementation(libs.glance.material3)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

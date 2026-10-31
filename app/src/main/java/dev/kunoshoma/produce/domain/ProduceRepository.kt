@@ -37,6 +37,7 @@ import dev.kunoshoma.produce.data.db.RestLogEntity
 import dev.kunoshoma.produce.data.settings.Settings
 import dev.kunoshoma.produce.data.settings.SettingsRepository
 import dev.kunoshoma.produce.goal.GoalService
+import dev.kunoshoma.produce.widget.WidgetUpdater
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -72,6 +73,7 @@ class ProduceRepository @Inject constructor(
     private val settingsRepo: SettingsRepository,
     private val goalService: GoalService,
     private val alarms: ProduceAlarms,
+    private val widget: WidgetUpdater,
     private val clock: Clock,
 ) {
     private val mutex = Mutex()
@@ -283,6 +285,7 @@ class ProduceRepository @Inject constructor(
         )
         active.clear()
         alarms.cancelLessonEnd()
+        widget.update()
         entry
     }
 
@@ -305,6 +308,7 @@ class ProduceRepository @Inject constructor(
             plannedDurationMin = t.durationMin, staminaCost = t.staminaCost, baseGain = t.baseGain, isSp = false,
             result = result, reasons = reasons, note = note, elapsedFraction = 1.0, derailCount = 0, source = LogSource.MANUAL,
         )
+        widget.update()
         Result.success(entry)
     }
 
@@ -400,6 +404,7 @@ class ProduceRepository @Inject constructor(
             ),
         )
         alarms.cancelRestEnd()
+        widget.update()
         updated
     }
 
@@ -425,9 +430,12 @@ class ProduceRepository @Inject constructor(
 
     // ---- 1 日の操作 ----
 
-    suspend fun closeDay() = mutex.withLock {
-        val day = ensureDay(today())
-        days.upsert(day.copy(closedAt = now()))
+    suspend fun closeDay() {
+        mutex.withLock {
+            val day = ensureDay(today())
+            days.upsert(day.copy(closedAt = now()))
+        }
+        widget.update()
     }
 
     suspend fun reopenDay() = mutex.withLock {
