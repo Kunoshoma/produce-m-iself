@@ -118,7 +118,10 @@ class ProduceRepository @Inject constructor(
         val start = StaminaRules.morningStamina(prevEnd, s.stamina, rate)
         val cal = calendar(s)
         val weekStart = cal.weekStart(date)
+        // 週のお題：同じ週に決まっていればそれ。なければ中期目標で最も遅れている軸、それもなければランダム（SPEC 3.4）
         val theme = days.between(weekStart, date).firstNotNullOfOrNull { it.themeAxis }
+            ?: runCatching { goalService.currentAxisBias() }.getOrDefault(emptyMap())
+                .filterValues { it > 1.0 }.maxByOrNull { it.value }?.key
             ?: Axis.entries[Random(weekStart.toEpochDay()).nextInt(Axis.entries.size)]
         val state = DayStateEntity(
             date = date,
