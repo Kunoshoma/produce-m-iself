@@ -51,14 +51,12 @@ class ChoiceGeneratorTest {
     }
 
     @Test
-    fun `lessons outside their time window are still offered instead of sleep`() {
-        // 全部「夜」限定にして朝に引く：体力は満タンなので「寝る」は出さず、時間帯を無視してレッスンを出す
+    fun `in the morning with nothing in window it is rest only, not sleep`() {
+        // 全部「夜」限定にして朝に引く：時間帯外のレッスンは出さない（SPEC 3.3）。体力は満タンなので「寝る」も出さず、休むだけ
         val nightOnly = templates.map { it.copy(windows = setOf(DayPart.NIGHT)) }
         repeat(20) { seed ->
             val out = ChoiceGenerator.generate(ChoiceInput(nightOnly, stamina = 100, dayPart = DayPart.MORNING), Random(seed))
-            assertEquals(3, out.size)
-            assertEquals(2, out.filterIsInstance<Choice.Lesson>().size)
-            assertTrue(out.none { it is Choice.Sleep })
+            assertEquals(listOf<Choice>(Choice.Rest(listOf(30, 60), true)), out)
         }
     }
 

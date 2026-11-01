@@ -55,8 +55,11 @@ data class GoalTargetLine(
     val requiredPerDay: Double = 0.0,
     /** 「イラスト制作（30分）× 4 回」のような翻訳。 */
     val suggestion: String? = null,
+    /** ターゲットの種類（AXIS / ACTION_COUNT / CHECKLIST）。古い JSON には無いので AXIS 扱い。 */
+    val kind: String = "AXIS",
 ) {
     val remaining: Int get() = (target - current).coerceAtLeast(0)
+    val isChecklist: Boolean get() = kind == "CHECKLIST"
 }
 
 /**

@@ -126,13 +126,17 @@ private fun ExamLines(g: GoalSummary) {
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(t.label, Modifier.weight(1f))
-            if (t.remaining > 0) {
+            if (t.isChecklist) {
+                // チェック項目は数字ではなく済/未済
+                Text(if (t.judgement == Judgement.ACHIEVED) "チェック済" else "未チェック", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(8.dp))
+            } else if (t.remaining > 0) {
                 Text("−${t.remaining}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(8.dp))
             }
             Pill(t.judgement.label, t.judgement.color())
         }
-        if (t.judgement != Judgement.ACHIEVED) {
+        if (t.judgement != Judgement.ACHIEVED && !t.isChecklist && t.requiredPerDay > 0.0) {
             val perWeek = (t.requiredPerDay * 7).roundToInt()
             val suggestion = t.suggestion?.let { "（$it）" } ?: ""
             Text(

@@ -223,6 +223,14 @@ interface GoalDao {
     @Query("SELECT * FROM goals WHERE id = :id")
     suspend fun byId(id: Long): GoalWithTargets?
 
+    /** その日に有効だった目標。進行中を優先し、なければ試験で閉じた目標（放棄したものは除く）。 */
+    @androidx.room.Transaction
+    @Query(
+        "SELECT * FROM goals WHERE startDate <= :date AND deadline >= :date AND status != 'ABANDONED' " +
+            "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, createdAt DESC LIMIT 1",
+    )
+    suspend fun coveringDate(date: LocalDate): GoalWithTargets?
+
     @androidx.room.Transaction
     @Query("SELECT * FROM goals ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<GoalWithTargets>>

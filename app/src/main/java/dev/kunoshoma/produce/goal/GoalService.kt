@@ -90,6 +90,9 @@ class GoalService @Inject constructor(
     fun observeAll(): Flow<List<GoalWithTargets>> = goals.observeAll()
     fun observeExams(goalId: Long): Flow<List<ExamResultEntity>> = exams.observeByGoal(goalId)
     suspend fun active(): GoalWithTargets? = goals.active()
+
+    /** その日に有効だった目標（レポートの作り直し用。閉じた目標でも消えない）。 */
+    suspend fun goalOn(date: LocalDate): GoalWithTargets? = goals.coveringDate(date)
     suspend fun byId(id: Long): GoalWithTargets? = goals.byId(id)
 
     private suspend fun today(): LocalDate = ProduceCalendar(clock.zone, settingsRepo.current().dayBoundaryHour).produceDate(clock.instant())

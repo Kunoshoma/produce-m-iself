@@ -211,8 +211,8 @@ class ReportService @Inject constructor(
      * 目標がない・期間外・評価に失敗したときは null（レポート生成自体は止めない）。
      */
     private suspend fun goalSummary(asOf: LocalDate): GoalSummary? = runCatching {
-        val g = goalService.active() ?: return@runCatching null
-        if (asOf.isBefore(g.goal.startDate) || asOf.isAfter(g.goal.deadline)) return@runCatching null
+        // 進行中だけでなく、その日に有効だった（あとで試験で閉じた）目標も対象。作り直しで目標の欄が消えないように
+        val g = goalService.goalOn(asOf) ?: return@runCatching null
         val ev = goalService.evaluate(g, asOf)
         GoalSummary(
             name = ev.name,
@@ -224,6 +224,7 @@ class ReportService @Inject constructor(
                 GoalTargetLine(
                     label = t.label, judgement = t.judgement, target = t.target, current = t.current,
                     requiredPerDay = t.requiredPerDay, suggestion = t.suggestions.firstOrNull(),
+                    kind = t.kind.name,
                 )
             },
         )

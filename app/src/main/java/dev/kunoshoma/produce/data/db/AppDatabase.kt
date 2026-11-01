@@ -44,6 +44,12 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE rest_logs ADD COLUMN actionLogId INTEGER")
                 db.execSQL("ALTER TABLE day_states ADD COLUMN choiceSeed INTEGER")
+                // v1 では終了されずに残った休むが起こり得た。v2 からは「未終了の行＝進行中」として扱うので、
+                // 古い未終了行は許可時間ちょうどで終了済みにしておく（回復は付けない）。
+                db.execSQL(
+                    "UPDATE rest_logs SET endedAt = startedAt + allowedMin * 60000, actualMin = allowedMin WHERE endedAt IS NULL",
+                )
+                db.execSQL("UPDATE day_states SET activeRestLogId = NULL WHERE activeRestLogId IS NOT NULL")
             }
         }
     }

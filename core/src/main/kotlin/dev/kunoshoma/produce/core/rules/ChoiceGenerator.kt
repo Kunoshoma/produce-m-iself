@@ -45,13 +45,11 @@ object ChoiceGenerator {
         val affordable = input.templates.filter { it.enabled && StaminaRules.canAfford(input.stamina, it.staminaCost) }
         // 体力が足りるレッスンが 1 つもない（体力 0 を含む）→ 休む / 寝る のみ（SPEC 3.2）
         if (affordable.isEmpty()) return listOf(rest, Choice.Sleep)
-        val inWindow = affordable.filter { it.availableAt(input.dayPart) }
-        val candidates = when {
-            inWindow.isNotEmpty() -> inWindow
-            // 夜で出せるものがなければ、今日はここまででいい
-            input.dayPart == DayPart.NIGHT -> return listOf(rest, Choice.Sleep)
-            // 時間帯が合わないだけなら、時間帯を無視してレッスンを出す（朝 9 時に「寝る」は出さない）
-            else -> affordable
+        // 時間帯はテンプレの指定どおり（SPEC 3.3「その時間帯しか出ない」）。時間帯外のものは出さない
+        val candidates = affordable.filter { it.availableAt(input.dayPart) }
+        if (candidates.isEmpty()) {
+            // 夜で出せるものがなければ、今日はここまででいい。朝・昼なら休んで時間帯を待つ（「寝る」は出さない）
+            return if (input.dayPart == DayPart.NIGHT) listOf(rest, Choice.Sleep) else listOf(rest)
         }
 
         val weights = candidates.associateWith { baseWeight(it, input) }.toMutableMap()

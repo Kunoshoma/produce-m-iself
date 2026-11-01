@@ -250,41 +250,50 @@ class ProduceRepository @Inject constructor(
      * （割り込みが何度来ても）同じ手札になり、引き直し回数の制限が効く（SPEC 3.3）。
      * レッスン完了・休む終了でシードは消え、次は新しい手札になる。
      */
-    suspend fun generateChoices(redraw: Boolean): List<Choice> = mutex.withLock {
-        val s = settingsRepo.current()
-        val n = now()
-        val date = calendar(s).produceDate(n)
-        var day = ensureDay(date)
-        closeExpiredRestLocked(s, n)?.let { day = it }
-        val seed: Long
-        if (redraw) {
-            if (day.redrawsUsed >= s.redrawsPerDay) return emptyList()
-            seed = n.toEpochMilli()
-            day = day.copy(redrawsUsed = day.redrawsUsed + 1, choiceSeed = seed)
-            days.upsert(day)
-        } else {
-            val stored = day.choiceSeed
-            if (stored == null) {
+    suspend fun generateChoices(redraw: Boolean): List<Choice> {
+        var closedRest: RestLogEntity? = null
+        val choices: List<Choice> = mutex.withLock {
+            val s = settingsRepo.current()
+            val n = now()
+            val date = calendar(s).produceDate(n)
+            var day = ensureDay(date)
+            closeExpiredRestLocked(s, n)?.let { (rest, updatedDay) ->
+                closedRest = rest
+                day = updatedDay
+            }
+            val seed: Long
+            if (redraw) {
+                if (day.redrawsUsed >= s.redrawsPerDay) return@withLock emptyList()
                 seed = n.toEpochMilli()
-                day = day.copy(choiceSeed = seed)
+                day = day.copy(redrawsUsed = day.redrawsUsed + 1, choiceSeed = seed)
                 days.upsert(day)
             } else {
-                seed = stored
+                val stored = day.choiceSeed
+                if (stored == null) {
+                    seed = n.toEpochMilli()
+                    day = day.copy(choiceSeed = seed)
+                    days.upsert(day)
+                } else {
+                    seed = stored
+                }
             }
+            val todayLogs = logs.between(date, date)
+            val input = ChoiceInput(
+                templates = templates.enabled().map { it.toCore() },
+                stamina = day.stamina,
+                dayPart = calendar(s).dayPart(n),
+                axesDoneToday = todayLogs.map { it.axis }.toSet(),
+                axisBias = runCatching { goalService.currentAxisBias() }.getOrDefault(emptyMap()),
+                themeAxis = day.themeAxis,
+                restMinuteOptions = s.restMinuteOptions,
+                restRecoveryAvailable = day.restRecoveredToday < s.stamina.restDailyCap && day.stamina < s.stamina.highThreshold,
+                spChance = s.spChance,
+            )
+            ChoiceGenerator.generate(input, Random(seed))
         }
-        val todayLogs = logs.between(date, date)
-        val input = ChoiceInput(
-            templates = templates.enabled().map { it.toCore() },
-            stamina = day.stamina,
-            dayPart = calendar(s).dayPart(n),
-            axesDoneToday = todayLogs.map { it.axis }.toSet(),
-            axisBias = runCatching { goalService.currentAxisBias() }.getOrDefault(emptyMap()),
-            themeAxis = day.themeAxis,
-            restMinuteOptions = s.restMinuteOptions,
-            restRecoveryAvailable = day.restRecoveredToday < s.stamina.restDailyCap && day.stamina < s.stamina.highThreshold,
-            spChance = s.spChance,
-        )
-        ChoiceGenerator.generate(input, Random(seed))
+        // 期限切れの休むをここで閉じたなら、ウィジェット更新と（前日分なら）レポートの作り直しをする
+        closedRest?.let { afterWrite(it.produceDate) }
+        return choices
     }
 
     // ---- レッスン ----
@@ -438,35 +447,35 @@ class ProduceRepository @Inject constructor(
                 ),
             )
         }
-        propagateToToday(date, s, staminaDelta = -cost)
+        propagateToToday(date, s)
         return entry.copy(id = id)
     }
 
     /**
      * 過去日（前日）の行を書き換えたあと、今日の行に反映する。
-     * 今日まだ何もしていなければ開始体力を前日の終了値から作り直し、正直ボーナスも持ち越す。
-     * すでに動いていれば差分だけ今日の体力に乗せる。
+     * 前日の終了体力から「今日の開始体力」を作り直し、その差分だけ今日の体力を動かす
+     * （朝の回復が上限に当たっていれば差分は 0 で、前日の消費は今日に響かない）。
+     * 今日まだレッスンしていなければ正直ボーナスも前日から引き継ぐ。
      */
-    private suspend fun propagateToToday(changedDate: LocalDate, s: Settings, staminaDelta: Int) {
+    private suspend fun propagateToToday(changedDate: LocalDate, s: Settings) {
         val today = calendar(s).produceDate(now())
         if (!changedDate.isBefore(today)) return
         val t = days.byDate(today) ?: return // まだ今日の行が無ければ、作るときに前日の値から計算される
-        val untouched = t.stamina == t.staminaStart && t.restRecoveredToday == 0 && logs.countOn(today) == 0
-        if (untouched) {
-            val prev = days.byDate(today.minusDays(1))
-            val prevEnd = prev?.stamina ?: s.stamina.max
-            val start = StaminaRules.morningStamina(prevEnd, s.stamina, t.recoveryRate)
-            days.upsert(
-                t.copy(
-                    staminaStart = start,
-                    stamina = start,
-                    honestyBonusPending = prev?.honestyBonusPending ?: t.honestyBonusPending,
-                    choiceSeed = null,
-                ),
-            )
-        } else if (staminaDelta != 0) {
-            days.upsert(t.copy(stamina = (t.stamina + staminaDelta).coerceIn(0, s.stamina.max), choiceSeed = null))
-        }
+        val prev = days.byDate(today.minusDays(1))
+        val prevEnd = prev?.stamina ?: s.stamina.max
+        val newStart = StaminaRules.morningStamina(prevEnd, s.stamina, t.recoveryRate)
+        val shift = newStart - t.staminaStart
+        val noLessonsYet = logs.countOn(today) == 0
+        val honesty = if (noLessonsYet) (prev?.honestyBonusPending ?: false) else t.honestyBonusPending
+        if (shift == 0 && honesty == t.honestyBonusPending) return
+        days.upsert(
+            t.copy(
+                staminaStart = newStart,
+                stamina = (t.stamina + shift).coerceIn(0, s.stamina.max),
+                honestyBonusPending = honesty,
+                choiceSeed = null,
+            ),
+        )
     }
 
     /** 書き込み後の後処理（ロックの外で呼ぶ）。過去日に触っていたら、その日のレポートを作り直す。 */
@@ -526,12 +535,12 @@ class ProduceRepository @Inject constructor(
         return closed
     }
 
-    /** 期限切れの休むがあれば閉じる。閉じたら更新後の今日の行を返す。mutex 保持中に呼ぶ。 */
-    private suspend fun closeExpiredRestLocked(s: Settings, n: Instant): DayStateEntity? {
+    /** 期限切れの休むがあれば閉じる。閉じたら（閉じた休む, 更新後の今日の行）を返す。mutex 保持中に呼ぶ。 */
+    private suspend fun closeExpiredRestLocked(s: Settings, n: Instant): Pair<RestLogEntity, DayStateEntity>? {
         val open = rests.openRest() ?: return null
         val until = open.startedAt.plus(open.allowedMin.toLong(), ChronoUnit.MINUTES)
         if (n.isBefore(until)) return null
-        return finalizeRestLocked(open, s, n).second
+        return finalizeRestLocked(open, s, n)
     }
 
     /**
@@ -671,6 +680,8 @@ class ProduceRepository @Inject constructor(
     /** 緊急バイパス（SPEC 4.2）。残り回数がなければ null。 */
     suspend fun startBypass(packageName: String?): Instant? {
         val until: Instant? = mutex.withLock {
+            // レッスン中はバイパスできない（ゲートはレッスン優先なので、回数だけ消費させない）
+            if (active.get() != null) return@withLock null
             val s = settingsRepo.current()
             val date = today()
             val day = ensureDay(date)
@@ -742,7 +753,7 @@ class ProduceRepository @Inject constructor(
                         choiceSeed = null,
                     ),
                 )
-                propagateToToday(entry.produceDate, s, staminaDelta = entry.staminaCost)
+                propagateToToday(entry.produceDate, s)
             }
             entry.produceDate
         }
