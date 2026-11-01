@@ -106,8 +106,12 @@ fun ResultScreen(onHome: () -> Unit, vm: ResultViewModel = hiltViewModel()) {
             )
         }
         Spacer(Modifier.height(24.dp))
+        s.error?.let { msg ->
+            Text("保存できなかった：$msg", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(8.dp))
+        }
         Button(onClick = vm::save, enabled = !s.saving && s.result != null, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-            Text("記録する")
+            Text(if (s.error != null) "もう一度記録する" else "記録する")
         }
         Spacer(Modifier.height(24.dp))
     }

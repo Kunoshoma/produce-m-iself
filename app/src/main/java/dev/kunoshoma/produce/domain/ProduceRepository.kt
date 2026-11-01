@@ -92,6 +92,9 @@ class ProduceRepository @Inject constructor(
 ) {
     private val mutex = Mutex()
 
+    /** service_gaps の開閉専用。接続・切断の読み書きが追い越さないように直列化する（本体の mutex とは独立）。 */
+    private val gapMutex = Mutex()
+
     // ---- 時間 ----
 
     private suspend fun calendar(): ProduceCalendar = calendar(settingsRepo.current())
@@ -704,15 +707,16 @@ class ProduceRepository @Inject constructor(
     }
 
     /** サービス接続：開いている停止区間を閉じる。 */
-    suspend fun markServiceConnected() {
+    suspend fun markServiceConnected() = gapMutex.withLock {
         serviceGaps.open()?.let { serviceGaps.update(it.copy(endedAt = now())) }
+        Unit
     }
 
     /** サービス切断：停止区間を開く。新しく開いたら true（すでに停止中なら false）。 */
-    suspend fun markServiceDisconnected(): Boolean {
-        if (serviceGaps.open() != null) return false
+    suspend fun markServiceDisconnected(): Boolean = gapMutex.withLock {
+        if (serviceGaps.open() != null) return@withLock false
         serviceGaps.insert(ServiceGapEntity(startedAt = now(), endedAt = null))
-        return true
+        true
     }
 
     suspend fun serviceGapsSince(from: Instant): List<ServiceGapEntity> = serviceGaps.since(from)

@@ -8,6 +8,7 @@ import dev.kunoshoma.produce.core.model.LessonResult
 import dev.kunoshoma.produce.data.db.ActionTemplateEntity
 import dev.kunoshoma.produce.data.settings.Settings
 import dev.kunoshoma.produce.domain.ProduceRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,20 +53,21 @@ class ManualLogViewModel @Inject constructor(private val repo: ProduceRepository
         // 最初の suspend の前にフラグを立てる（連打で同じ記録が 2 件入らないように）
         _state.value = s.copy(saving = true, message = null)
         viewModelScope.launch {
-            val startedAt = repo.now().minus(s.minutesAgo.toLong(), ChronoUnit.MINUTES)
-            val outcome: Result<String> = when (s.tab) {
-                ManualTab.LESSON -> {
-                    val id = s.templateId
-                    if (id == null) {
-                        Result.failure<String>(IllegalStateException("アクションを選んで"))
-                    } else {
-                        repo.logManualLesson(id, startedAt, s.result, if (s.result == LessonResult.SUCCESS) emptySet() else s.reasons, s.note.trim())
-                            .map { log -> "記録した：${log.templateName} +${log.gain}" }
+            // どちらのタブでも、例外は落とさずメッセージにする（saving が立ったままにならないように）
+            val outcome: Result<String> = runCatching {
+                val startedAt = repo.now().minus(s.minutesAgo.toLong(), ChronoUnit.MINUTES)
+                when (s.tab) {
+                    ManualTab.LESSON -> {
+                        val id = s.templateId ?: throw IllegalStateException("アクションを選んで")
+                        val log = repo.logManualLesson(id, startedAt, s.result, if (s.result == LessonResult.SUCCESS) emptySet() else s.reasons, s.note.trim()).getOrThrow()
+                        "記録した：${log.templateName} +${log.gain}"
+                    }
+                    ManualTab.REST -> {
+                        val rest = repo.logManualRest(startedAt, s.restMinutes)
+                        "娯楽 ${rest.actualMin} 分を記録。体力 +${rest.staminaRecovered}"
                     }
                 }
-                ManualTab.REST -> runCatching { repo.logManualRest(startedAt, s.restMinutes) }
-                    .map { rest -> "娯楽 ${rest.actualMin} 分を記録。体力 +${rest.staminaRecovered}" }
-            }
+            }.onFailure { if (it is CancellationException) throw it }
             outcome
                 .onSuccess { msg -> update { it.copy(saving = false, done = true, message = msg) } }
                 .onFailure { e -> update { it.copy(saving = false, message = e.message ?: "保存できなかった") } }

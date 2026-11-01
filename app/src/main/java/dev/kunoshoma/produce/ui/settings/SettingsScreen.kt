@@ -159,16 +159,31 @@ fun SettingsScreen(onBack: () -> Unit, onBlockedApps: () -> Unit = {}, vm: Setti
             SectionTitle("週ランクの閾値")
             // 4 つまとめて検証する（S > A > B > C > 0）。途中の値や順序違いは保存せず、欄を赤くして知らせる。
             // 1 欄ずつ保存すると「S を 250 にしたい」が A=280 に引っかかって黙って捨てられる
-            var rankS by remember(s.rank) { mutableStateOf(s.rank.s.toString()) }
-            var rankA by remember(s.rank) { mutableStateOf(s.rank.a.toString()) }
-            var rankB by remember(s.rank) { mutableStateOf(s.rank.b.toString()) }
-            var rankC by remember(s.rank) { mutableStateOf(s.rank.c.toString()) }
+            // 入力中の文字列はこの画面が持つ。DataStore から戻ってくる自分の書き込み（エコー）で上書きしない（NumberField と同じ仕組み）
+            var rankS by remember { mutableStateOf(s.rank.s.toString()) }
+            var rankA by remember { mutableStateOf(s.rank.a.toString()) }
+            var rankB by remember { mutableStateOf(s.rank.b.toString()) }
+            var rankC by remember { mutableStateOf(s.rank.c.toString()) }
+            val pendingRank = remember { mutableListOf<RankThresholds>() }
+            LaunchedEffect(s.rank) {
+                val i = pendingRank.indexOf(s.rank)
+                if (i >= 0) {
+                    // 自分が出した値が戻ってきた（追い越されていてもよい）。入力中の文字はそのまま
+                    pendingRank.subList(0, i + 1).clear()
+                } else {
+                    // 外から変わった（復元など）。表示を合わせる
+                    pendingRank.clear()
+                    rankS = s.rank.s.toString(); rankA = s.rank.a.toString(); rankB = s.rank.b.toString(); rankC = s.rank.c.toString()
+                }
+            }
             val rankCandidate = runCatching {
                 RankThresholds(s = rankS.toInt(), a = rankA.toInt(), b = rankB.toInt(), c = rankC.toInt())
             }.getOrNull()
             val rankInvalid = rankCandidate == null
             fun commitRank(sS: String, sA: String, sB: String, sC: String) {
                 val next = runCatching { RankThresholds(s = sS.toInt(), a = sA.toInt(), b = sB.toInt(), c = sC.toInt()) }.getOrNull() ?: return
+                if (pendingRank.size >= 16) pendingRank.removeAt(0)
+                pendingRank.add(next)
                 vm.update { it.copy(rank = next) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

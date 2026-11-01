@@ -10,6 +10,7 @@ import dev.kunoshoma.produce.data.db.ActiveLessonEntity
 import dev.kunoshoma.produce.data.settings.Settings
 import dev.kunoshoma.produce.domain.ProduceRepository
 import dev.kunoshoma.produce.notify.Notifications
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +28,8 @@ data class ResultUiState(
     val note: String = "",
     val saved: ActionLogEntity? = null,
     val saving: Boolean = false,
+    /** 保存に失敗したときのメッセージ。再試行できる。 */
+    val error: String? = null,
 )
 
 @HiltViewModel
@@ -72,11 +75,16 @@ class ResultViewModel @Inject constructor(
         val result = s.result ?: return
         if (s.saving || s.saved != null || s.lesson == null) return
         // 二度押しで 2 件記録しないよう、最初の suspend の前にフラグを立てる
-        _state.value = s.copy(saving = true)
+        _state.value = s.copy(saving = true, error = null)
         viewModelScope.launch {
             val reasons = if (result == LessonResult.SUCCESS) emptySet() else s.reasons
-            val saved = repo.finishLesson(result, reasons, s.note.trim(), endedAt = openedAt)
-            _state.value = _state.value.copy(saving = false, saved = saved)
+            // DB 障害などで落ちてもクラッシュさせない。トランザクションは戻るのでレッスンは進行中のまま、もう一度押せる
+            runCatching { repo.finishLesson(result, reasons, s.note.trim(), endedAt = openedAt) }
+                .onSuccess { saved -> _state.value = _state.value.copy(saving = false, saved = saved) }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    _state.value = _state.value.copy(saving = false, error = e.message ?: "保存できなかった")
+                }
         }
     }
 }
