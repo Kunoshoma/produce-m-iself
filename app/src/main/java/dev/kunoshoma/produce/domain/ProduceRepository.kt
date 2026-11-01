@@ -476,11 +476,9 @@ class ProduceRepository @Inject constructor(
         val cal = calendar(s)
         val today = cal.produceDate(now())
         if (!date.isBefore(today)) return
-        runCatching {
-            if (dailyReports.byDate(date) != null) reports.generateDaily(date, force = true)
-            val ws = cal.weekStart(date)
-            if (cal.weekEnd(ws).isBefore(today) && reports.weekly(ws) != null) reports.generateWeekly(ws)
-        }
+        // 既にレポートがある日なら作り直す（終わった週の週次も generateDaily の中で作り直される）。
+        // まだ無ければ、日付境界のバックフィルがそのとき作る
+        runCatching { if (dailyReports.byDate(date) != null) reports.generateDaily(date, force = true) }
     }
 
     suspend fun log(id: Long): ActionLogEntity? = logs.byId(id)
@@ -759,7 +757,12 @@ private val DEFAULT_BLOCKED = listOf(
     "com.instagram.android" to "Instagram",
 )
 
+/** DB 行 → ルール用モデル。復元したデータなどで範囲外の値が入っていても、ここで安全な範囲に丸める。 */
 fun ActionTemplateEntity.toCore() = dev.kunoshoma.produce.core.model.ActionTemplate(
-    id = id, name = name, axis = axis, durationMin = durationMin, staminaCost = staminaCost,
-    baseGain = baseGain, weight = weight, windows = windows, enabled = enabled,
+    id = id, name = name, axis = axis,
+    durationMin = durationMin.coerceAtLeast(1),
+    staminaCost = staminaCost.coerceAtLeast(0),
+    baseGain = baseGain.coerceAtLeast(0),
+    weight = weight.coerceIn(dev.kunoshoma.produce.core.model.ActionTemplate.MIN_WEIGHT, dev.kunoshoma.produce.core.model.ActionTemplate.MAX_WEIGHT),
+    windows = windows, enabled = enabled,
 )

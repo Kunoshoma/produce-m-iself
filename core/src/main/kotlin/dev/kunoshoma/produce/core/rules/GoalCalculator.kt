@@ -59,6 +59,8 @@ object GoalCalculator {
         val judgement = when {
             remaining == 0 -> Judgement.ACHIEVED
             left == 0 -> Judgement.DANGER
+            // 開始初日（経過 0〜1 日）はまだペースが観測できない。current = 0 のまま「危険」にはしない。
+            elapsed <= 1 -> Judgement.ON_TRACK
             projected >= target -> Judgement.ON_TRACK
             projected >= target * WARN_RATIO -> Judgement.WARN
             else -> Judgement.DANGER

@@ -15,7 +15,7 @@ sealed interface Choice {
     data class Lesson(val template: ActionTemplate, val isSp: Boolean, val badges: Set<Badge>) : Choice
     /** 娯楽を許可する。[recovers] が false なら当日の娯楽回復上限に達している。 */
     data class Rest(val minuteOptions: List<Int>, val recovers: Boolean) : Choice
-    /** 体力が尽きたときだけ出る「今日を終える」。 */
+    /** 体力が尽きたとき（または夜で出せるレッスンがないとき）だけ出る「今日を終える」。 */
     data object Sleep : Choice
 }
 
@@ -42,10 +42,17 @@ object ChoiceGenerator {
 
     fun generate(input: ChoiceInput, random: Random = Random.Default): List<Choice> {
         val rest = Choice.Rest(input.restMinuteOptions, input.restRecoveryAvailable)
-        val candidates = input.templates.filter {
-            it.enabled && it.availableAt(input.dayPart) && StaminaRules.canAfford(input.stamina, it.staminaCost)
+        val affordable = input.templates.filter { it.enabled && StaminaRules.canAfford(input.stamina, it.staminaCost) }
+        // 体力が足りるレッスンが 1 つもない（体力 0 を含む）→ 休む / 寝る のみ（SPEC 3.2）
+        if (affordable.isEmpty()) return listOf(rest, Choice.Sleep)
+        val inWindow = affordable.filter { it.availableAt(input.dayPart) }
+        val candidates = when {
+            inWindow.isNotEmpty() -> inWindow
+            // 夜で出せるものがなければ、今日はここまででいい
+            input.dayPart == DayPart.NIGHT -> return listOf(rest, Choice.Sleep)
+            // 時間帯が合わないだけなら、時間帯を無視してレッスンを出す（朝 9 時に「寝る」は出さない）
+            else -> affordable
         }
-        if (candidates.isEmpty()) return listOf(rest, Choice.Sleep)
 
         val weights = candidates.associateWith { baseWeight(it, input) }.toMutableMap()
         val picked = mutableListOf<ActionTemplate>()
@@ -71,7 +78,8 @@ object ChoiceGenerator {
     }
 
     internal fun baseWeight(t: ActionTemplate, input: ChoiceInput): Double {
-        var w = t.weight.toDouble()
+        // 復元データなどで範囲外の重みが来ても落とさず 1..5 に丸める
+        var w = t.weight.coerceIn(ActionTemplate.MIN_WEIGHT, ActionTemplate.MAX_WEIGHT).toDouble()
         if (t.axis !in input.axesDoneToday) w *= UNDONE_AXIS_BOOST
         w *= (input.axisBias[t.axis] ?: 1.0).coerceIn(1.0, MAX_BIAS)
         return w

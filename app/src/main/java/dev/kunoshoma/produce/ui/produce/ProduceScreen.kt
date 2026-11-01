@@ -206,11 +206,22 @@ private fun RestCard(c: Choice.Rest, enabled: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun SleepCard(enabled: Boolean, onClick: () -> Unit) {
-    ChoiceCard(border = Accent, enabled = enabled, onClick = onClick) {
+    // 寝る宣言は翌朝まで割り込みが止まるので、ホームの「寝る」と同じく一度確認する
+    var confirm by remember { mutableStateOf(false) }
+    ChoiceCard(border = Accent, enabled = enabled, onClick = { confirm = true }) {
         Text("寝る", style = MaterialTheme.typography.labelLarge, color = Accent)
         Spacer(Modifier.height(8.dp))
         Text("今日を終える", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
-        Text("体力が尽きた。無理せず明日に回そう。", style = MaterialTheme.typography.bodyMedium)
+        Text("今日はここまで。無理せず明日に回そう。", style = MaterialTheme.typography.bodyMedium)
+    }
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("今日を終える？") },
+            text = { Text("日次レポートを作って、明朝の日付境界まで割り込みを止める。娯楽は通るようになる。") },
+            confirmButton = { TextButton(onClick = { confirm = false; onClick() }) { Text("寝る") } },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("やめる") } },
+        )
     }
 }

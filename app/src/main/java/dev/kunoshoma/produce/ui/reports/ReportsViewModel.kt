@@ -12,6 +12,7 @@ import dev.kunoshoma.produce.data.db.WeeklyReportEntity
 import dev.kunoshoma.produce.data.settings.Settings
 import dev.kunoshoma.produce.data.settings.SettingsRepository
 import dev.kunoshoma.produce.report.ReportService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
+
+/** 保存済み JSON が今のスキーマと合わないとき（古いビルドの行・壊れた行）に出す文言。落とさずに表示で伝える。 */
+internal const val REPORT_LOAD_ERROR = "このレポートを読み込めなかった。古いバージョンで作った分かもしれない。"
 
 @HiltViewModel
 class ReportsViewModel @Inject constructor(
@@ -56,11 +60,24 @@ class DailyReportViewModel @Inject constructor(
     val settings: StateFlow<Settings?> = settingsRepo.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val _loaded = MutableStateFlow(false)
     val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
+    private val _error = MutableStateFlow<String?>(null)
+    /** 読み込みに失敗したときの文言。null なら正常。 */
+    val error: StateFlow<String?> = _error.asStateFlow()
 
     init {
         viewModelScope.launch {
             val date = savedState.get<String>("date")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-            _report.value = date?.let { reports.daily(it) }
+            // JSON のデコード失敗（SerializationException / IllegalArgumentException など）で落とさず、エラー表示にする
+            _report.value = date?.let { d ->
+                try {
+                    reports.daily(d)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _error.value = REPORT_LOAD_ERROR
+                    null
+                }
+            }
             _loaded.value = true
         }
     }
@@ -77,11 +94,23 @@ class WeeklyReportViewModel @Inject constructor(
     val settings: StateFlow<Settings?> = settingsRepo.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val _loaded = MutableStateFlow(false)
     val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
+    private val _error = MutableStateFlow<String?>(null)
+    /** 読み込みに失敗したときの文言。null なら正常。 */
+    val error: StateFlow<String?> = _error.asStateFlow()
 
     init {
         viewModelScope.launch {
             val week = savedState.get<String>("weekStart")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-            _report.value = week?.let { reports.weekly(it) }
+            _report.value = week?.let { w ->
+                try {
+                    reports.weekly(w)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _error.value = REPORT_LOAD_ERROR
+                    null
+                }
+            }
             _loaded.value = true
         }
     }

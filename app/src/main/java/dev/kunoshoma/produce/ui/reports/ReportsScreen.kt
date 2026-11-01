@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -128,11 +129,14 @@ private fun TrendTab(trend: Map<LocalDate, Map<Axis, Int>>, settings: Settings?)
     }
 }
 
-/** 軸ごとに積み上げた棒グラフ。依存ライブラリなしで Canvas に描く。 */
+/**
+ * 軸ごとに積み上げた棒グラフ。依存ライブラリなしで Canvas に描く。
+ * @param colorOf 軸ごとの色。軸の内訳を持たない合計だけのグラフは単色（Accent など）を返す。
+ */
 @Composable
-fun StackedBars(values: List<Map<Axis, Int>>, modifier: Modifier = Modifier, height: Int = 160) {
+fun StackedBars(values: List<Map<Axis, Int>>, modifier: Modifier = Modifier, height: Int = 160, colorOf: (Axis) -> Color = { it.color() }) {
     val max = (values.maxOfOrNull { it.values.sum() } ?: 0).coerceAtLeast(1)
-    val colors = Axis.entries.associateWith { it.color() }
+    val colors = Axis.entries.associateWith { colorOf(it) }
     val track = MaterialTheme.colorScheme.surfaceVariant
     Canvas(modifier.fillMaxWidth().height(height.dp)) {
         val n = values.size.coerceAtLeast(1)
