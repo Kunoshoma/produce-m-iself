@@ -1,5 +1,6 @@
 package dev.kunoshoma.produce.ui.goal
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +44,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.kunoshoma.produce.core.rules.Judgement
 import dev.kunoshoma.produce.data.db.ExamKind
+import dev.kunoshoma.produce.data.db.ExamResultEntity
 import dev.kunoshoma.produce.data.db.GoalStatus
 import dev.kunoshoma.produce.data.db.TargetKind
 import dev.kunoshoma.produce.goal.GoalEvaluation
@@ -60,6 +62,7 @@ fun GoalScreen(onBack: () -> Unit, onCreate: () -> Unit, vm: GoalViewModel = hil
     val loaded by vm.active.collectAsStateWithLifecycle()
     val exams by vm.exams.collectAsStateWithLifecycle()
     val history by vm.history.collectAsStateWithLifecycle()
+    val historyExams by vm.historyExams.collectAsStateWithLifecycle()
     var confirmAbandon by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -124,16 +127,7 @@ fun GoalScreen(onBack: () -> Unit, onCreate: () -> Unit, vm: GoalViewModel = hil
                 if (exams.isNotEmpty()) {
                     SectionTitle("試験の履歴")
                     exams.forEach { e ->
-                        ProduceCard {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(e.date.toString(), style = MaterialTheme.typography.labelLarge)
-                                Spacer(Modifier.width(8.dp))
-                                Pill(if (e.kind == ExamKind.MID) "中間" else "最終", Accent)
-                                Spacer(Modifier.weight(1f))
-                                e.passed?.let { Text(if (it) "合格" else "不合格", fontWeight = FontWeight.Bold, color = if (it) StaminaGreen else MaterialTheme.colorScheme.error) }
-                            }
-                            Text(e.summary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
-                        }
+                        ProduceCard { ExamBlock(e, vm.decode(e), initiallyExpanded = false) }
                         Spacer(Modifier.height(8.dp))
                     }
                 }
@@ -157,6 +151,26 @@ fun GoalScreen(onBack: () -> Unit, onCreate: () -> Unit, vm: GoalViewModel = hil
                                 when (g.goal.status) { GoalStatus.PASSED -> StaminaGreen; GoalStatus.FAILED -> MaterialTheme.colorScheme.error; else -> MaterialTheme.colorScheme.onSurfaceVariant },
                             )
                         }
+                        // 最終試験の結果（達成率・足りなかったもの）と中間試験は、目標が終わってもここから見返せる（SPEC 12.5）
+                        val gExams = historyExams[g.goal.id].orEmpty()
+                        val finals = gExams.filter { it.kind == ExamKind.FINAL }
+                        val mids = gExams.filter { it.kind == ExamKind.MID }
+                        finals.forEach { e ->
+                            Spacer(Modifier.height(8.dp))
+                            ExamBlock(e, vm.decode(e), initiallyExpanded = true)
+                        }
+                        if (mids.isNotEmpty()) {
+                            var showMids by remember(g.goal.id) { mutableStateOf(false) }
+                            TextButton(onClick = { showMids = !showMids }) {
+                                Text(if (showMids) "中間試験を隠す" else "中間試験 ${mids.size} 回を見る")
+                            }
+                            if (showMids) {
+                                mids.forEach { e ->
+                                    ExamBlock(e, vm.decode(e), initiallyExpanded = false)
+                                    Spacer(Modifier.height(4.dp))
+                                }
+                            }
+                        }
                         if (g.goal.status == GoalStatus.FAILED && l.ui == null) {
                             Spacer(Modifier.height(8.dp))
                             OutlinedButton(onClick = { vm.retry(g.goal.id) }) { Text("同じ目標で再挑戦") }
@@ -178,6 +192,55 @@ fun GoalScreen(onBack: () -> Unit, onCreate: () -> Unit, vm: GoalViewModel = hil
             confirmButton = { TextButton(onClick = { id?.let(vm::abandon); confirmAbandon = false }) { Text("やめる") } },
             dismissButton = { TextButton(onClick = { confirmAbandon = false }) { Text("続ける") } },
         )
+    }
+}
+
+/**
+ * 試験結果 1 件（SPEC 12.6 の結果カードの中身）。
+ * 日付・中間/最終・合否・要約を常に出し、タップで保存時点の各ターゲットの達成状況（current / target、判定、不足分）を開く。
+ */
+@Composable
+private fun ExamBlock(e: ExamResultEntity, detail: GoalEvaluation?, initiallyExpanded: Boolean) {
+    var expanded by remember(e.id) { mutableStateOf(initiallyExpanded) }
+    Column(
+        Modifier.fillMaxWidth()
+            .clickable(enabled = detail != null) { expanded = !expanded }
+            .padding(vertical = 4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(e.date.toString(), style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.width(8.dp))
+            Pill(if (e.kind == ExamKind.MID) "中間" else "最終", Accent)
+            Spacer(Modifier.weight(1f))
+            e.passed?.let { Text(if (it) "合格" else "不合格", fontWeight = FontWeight.Bold, color = if (it) StaminaGreen else MaterialTheme.colorScheme.error) }
+        }
+        Text(e.summary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+        if (detail == null) return@Column
+        if (!expanded) {
+            Text("タップで各ターゲットの結果", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+            return@Column
+        }
+        Spacer(Modifier.height(6.dp))
+        Text("達成率 ${(detail.progressRatio * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+        detail.targets.forEach { t ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                Text(if (t.required) t.label else "${t.label}（加点）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                Text(
+                    if (t.kind == TargetKind.CHECKLIST) (if (t.current >= 1) "済" else "未") else "${t.current} / ${t.target}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.width(6.dp))
+                Pill(t.judgement.label, t.judgement.color())
+            }
+            if (t.judgement != Judgement.ACHIEVED) {
+                val shortfall = when (t.kind) {
+                    TargetKind.CHECKLIST -> "未チェック"
+                    TargetKind.ACTION_COUNT -> "あと ${(t.target - t.current).coerceAtLeast(0)} 回"
+                    TargetKind.AXIS -> "あと ${(t.target - t.current).coerceAtLeast(0)}" + (t.suggestions.firstOrNull()?.let { "（$it）" } ?: "")
+                }
+                Text(shortfall, style = MaterialTheme.typography.bodySmall, color = Accent)
+            }
+        }
     }
 }
 

@@ -2,9 +2,11 @@ package dev.kunoshoma.produce.ui.manual
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -14,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -36,6 +39,8 @@ import dev.kunoshoma.produce.core.model.FailReason
 import dev.kunoshoma.produce.core.model.LessonResult
 import dev.kunoshoma.produce.ui.components.ChipRow
 import dev.kunoshoma.produce.ui.components.SectionTitle
+import dev.kunoshoma.produce.ui.theme.StaminaGreen
+import kotlinx.coroutines.delay
 
 private val agoOptions = listOf(0, 15, 30, 60, 120, 180, 360, 720)
 private fun agoLabel(m: Int) = when {
@@ -53,10 +58,15 @@ fun ManualLogScreen(onBack: () -> Unit, vm: ManualLogViewModel = hiltViewModel()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(s.message, s.done) {
-        s.message?.let {
-            snackbar.showSnackbar(it)
+        val msg = s.message ?: return@LaunchedEffect
+        if (s.done) {
+            // 成功：結果はボタンの下に出してあるので、少し見せてすぐ戻る
+            // （スナックバーが消えるまでの 4 秒を待たせると「固まった」ように見える）
+            delay(600)
+            onBack()
+        } else {
+            snackbar.showSnackbar(msg)
             vm.consumeMessage()
-            if (s.done) onBack()
         }
     }
 
@@ -69,7 +79,8 @@ fun ManualLogScreen(onBack: () -> Unit, vm: ManualLogViewModel = hiltViewModel()
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        // edge-to-edge なので Scaffold の padding は IME を含まない。メモ入力中はキーボードの分も避ける
+        Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             TabRow(selectedTabIndex = s.tab.ordinal) {
                 Tab(selected = s.tab == ManualTab.LESSON, onClick = { vm.update { it.copy(tab = ManualTab.LESSON) } }, text = { Text("さっきやった") })
                 Tab(selected = s.tab == ManualTab.REST, onClick = { vm.update { it.copy(tab = ManualTab.REST) } }, text = { Text("娯楽してた") })
@@ -104,7 +115,12 @@ fun ManualLogScreen(onBack: () -> Unit, vm: ManualLogViewModel = hiltViewModel()
                     }
                 }
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = vm::save, enabled = !s.done, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("記録する") }
+                Button(onClick = vm::save, enabled = !s.saving && !s.done, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                    Text(if (s.saving) "記録中…" else "記録する")
+                }
+                if (s.done) {
+                    s.message?.let { Text(it, color = StaminaGreen, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 12.dp)) }
+                }
                 Spacer(Modifier.height(32.dp))
             }
         }

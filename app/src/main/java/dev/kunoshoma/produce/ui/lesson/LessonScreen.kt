@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -39,6 +40,7 @@ import java.time.Instant
 @Composable
 fun LessonScreen(onFinish: () -> Unit, onBack: () -> Unit, vm: LessonViewModel = hiltViewModel()) {
     val loaded by vm.lesson.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var confirmStop by remember { mutableStateOf(false) }
 
@@ -56,7 +58,7 @@ fun LessonScreen(onFinish: () -> Unit, onBack: () -> Unit, vm: LessonViewModel =
     }
     val lesson = l.lesson
     if (lesson == null) {
-        Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text("進行中のレッスンはないよ", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(16.dp))
             Button(onClick = onBack) { Text("ホームへ") }
@@ -70,12 +72,13 @@ fun LessonScreen(onFinish: () -> Unit, onBack: () -> Unit, vm: LessonViewModel =
     val done = remaining <= 0
     val progress = elapsed.toFloat() / total
 
+    // Activity は edge-to-edge。Scaffold を使っていないので、ステータスバー / ナビバーの分はここで避ける
     Column(
-        Modifier.fillMaxSize().padding(24.dp),
+        Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Pill(lesson.axis.defaultLabel, lesson.axis.color())
+        Pill(settings?.label(lesson.axis) ?: lesson.axis.defaultLabel, lesson.axis.color())
         Spacer(Modifier.height(12.dp))
         Text(lesson.templateName, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         if (lesson.isSp) { Spacer(Modifier.height(8.dp)); Pill("SP レッスン", Accent) }
@@ -107,6 +110,8 @@ fun LessonScreen(onFinish: () -> Unit, onBack: () -> Unit, vm: LessonViewModel =
     }
 
     if (confirmStop) {
+        // 中断した時刻は結果画面（ResultViewModel）が開いた瞬間に捕まえて finishLesson(endedAt) に渡す。
+        // 入力に時間がかかっても、獲得の経過比例は「終える」を押した時点で計算される（SPEC 3.5）。
         AlertDialog(
             onDismissRequest = { confirmStop = false },
             title = { Text("ここで終える？") },

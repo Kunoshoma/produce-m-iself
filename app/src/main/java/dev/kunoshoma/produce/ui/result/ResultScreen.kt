@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -30,6 +31,7 @@ import dev.kunoshoma.produce.core.model.FailReason
 import dev.kunoshoma.produce.core.model.LessonResult
 import dev.kunoshoma.produce.data.db.ActionLogEntity
 import dev.kunoshoma.produce.ui.components.ChipRow
+import dev.kunoshoma.produce.ui.components.Pill
 import dev.kunoshoma.produce.ui.components.ProduceCard
 import dev.kunoshoma.produce.ui.components.SectionTitle
 import dev.kunoshoma.produce.ui.theme.StaminaGreen
@@ -38,6 +40,7 @@ import dev.kunoshoma.produce.ui.theme.color
 @Composable
 fun ResultScreen(onHome: () -> Unit, vm: ResultViewModel = hiltViewModel()) {
     val s by vm.state.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
 
     if (s.loading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -49,7 +52,7 @@ fun ResultScreen(onHome: () -> Unit, vm: ResultViewModel = hiltViewModel()) {
     }
     val lesson = s.lesson
     if (lesson == null) {
-        Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text("記録するレッスンがないよ", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(16.dp))
             Button(onClick = onHome) { Text("ホームへ") }
@@ -57,7 +60,10 @@ fun ResultScreen(onHome: () -> Unit, vm: ResultViewModel = hiltViewModel()) {
         return
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
+    // Activity は edge-to-edge。Scaffold を使っていないので、システムバーと IME（メモ欄）の分はここで避ける
+    Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp)) {
+        Pill(settings?.label(lesson.axis) ?: lesson.axis.defaultLabel, lesson.axis.color())
+        Spacer(Modifier.height(8.dp))
         Text(lesson.templateName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (lesson.derailCount > 0) {
             Text("レッスン中に娯楽アプリを ${lesson.derailCount} 回開いてたみたい", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
@@ -109,7 +115,11 @@ fun ResultScreen(onHome: () -> Unit, vm: ResultViewModel = hiltViewModel()) {
 
 @Composable
 private fun SavedView(saved: ActionLogEntity, onHome: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+    Column(
+        Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
         Text(saved.result.label, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(

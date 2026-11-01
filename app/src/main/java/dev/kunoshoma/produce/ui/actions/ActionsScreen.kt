@@ -6,9 +6,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -122,12 +124,16 @@ fun ActionEditScreen(id: Long, onBack: () -> Unit, vm: ActionEditViewModel = hil
             TopAppBar(
                 title = { Text(if (id == 0L) "アクションを追加" else "アクションを編集", fontWeight = FontWeight.Bold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る") } },
-                actions = { if (id != 0L) TextButton(onClick = { confirmDelete = true }) { Text("削除") } },
+                actions = { if (id != 0L) TextButton(onClick = { confirmDelete = true }, enabled = !s.saving && !s.saved) { Text("削除") } },
             )
         },
     ) { padding ->
         if (!s.loaded) return@Scaffold
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
+        // edge-to-edge なので Scaffold の padding は IME を含まない。文字入力中は IME の分も避けてスクロールできるようにする
+        Column(
+            Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()
+                .padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
+        ) {
             OutlinedTextField(
                 value = s.name, onValueChange = { v -> vm.update { it.copy(name = v) } },
                 label = { Text("名前") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -148,8 +154,9 @@ fun ActionEditScreen(id: Long, onBack: () -> Unit, vm: ActionEditViewModel = hil
                 Text("有効", Modifier.weight(1f))
                 Switch(checked = s.enabled, onCheckedChange = { v -> vm.update { it.copy(enabled = v) } })
             }
+            s.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 12.dp)) }
             Spacer(Modifier.height(24.dp))
-            Button(onClick = vm::save, enabled = s.valid, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("保存") }
+            Button(onClick = vm::save, enabled = s.valid && !s.saving && !s.saved, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("保存") }
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -159,20 +166,44 @@ fun ActionEditScreen(id: Long, onBack: () -> Unit, vm: ActionEditViewModel = hil
             onDismissRequest = { confirmDelete = false },
             title = { Text("このアクションを削除？") },
             text = { Text("過去の記録は残る。3 択には出なくなる。") },
-            confirmButton = { TextButton(onClick = { confirmDelete = false; vm.delete() }) { Text("削除") } },
+            confirmButton = { TextButton(onClick = { confirmDelete = false; vm.delete() }, enabled = !s.saving) { Text("削除") } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("やめる") } },
         )
     }
 }
 
+/**
+ * 整数入力欄。入力中の文字列はこの欄が持ち、[value] は「外から値が変わったとき」だけ表示に反映する。
+ *
+ * この欄が [onChange] で出した値がそのまま親から戻ってくるぶん（エコー）では表示を書き換えない。
+ * 設定画面のように DataStore 経由で遅れて戻る場合、"2" → "25" → "250" と打ったあとに "2" のエコーが
+ * 届いて入力中の文字が消える・カーソルが飛ぶ、というのを防ぐ。
+ * 時間チップでコスト・獲得の目安が入るような外部変更は、出した値と違うので今まで通り表示に反映される。
+ */
 @Composable
 fun NumberField(label: String, value: Int, modifier: Modifier = Modifier, onChange: (Int) -> Unit) {
-    var text by remember(value) { mutableStateOf(value.toString()) }
+    var text by remember { mutableStateOf(value.toString()) }
+    // onChange で出したが、まだ親から戻ってきていない値（古い順）
+    val pending = remember { mutableListOf<Int>() }
+    LaunchedEffect(value) {
+        val i = pending.indexOf(value)
+        if (i >= 0) {
+            // 自分が出した値のエコー。それ以前の（追い越された）エコーも用済み
+            pending.subList(0, i + 1).clear()
+        } else {
+            pending.clear()
+            if (text.toIntOrNull() != value) text = value.toString()
+        }
+    }
     OutlinedTextField(
         value = text,
         onValueChange = { v ->
             text = v.filter { it.isDigit() }.take(4)
-            text.toIntOrNull()?.let(onChange)
+            text.toIntOrNull()?.let { n ->
+                if (pending.size >= 16) pending.removeAt(0)
+                pending.add(n)
+                onChange(n)
+            }
         },
         label = { Text(label) },
         singleLine = true,

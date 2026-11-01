@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.kunoshoma.produce.data.db.ActiveLessonEntity
+import dev.kunoshoma.produce.data.settings.Settings
 import dev.kunoshoma.produce.domain.ProduceRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,10 @@ class LessonViewModel @Inject constructor(repo: ProduceRepository) : ViewModel()
     val lesson: StateFlow<Loaded?> = repo.activeLessonFlow
         .map { Loaded(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** 軸の表示名は設定で変えられる（SPEC 3.1）。null = まだ読めていない。 */
+    val settings: StateFlow<Settings?> =
+        repo.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     data class Loaded(val lesson: ActiveLessonEntity?)
 }

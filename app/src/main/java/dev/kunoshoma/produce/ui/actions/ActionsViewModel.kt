@@ -14,9 +14,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.time.Instant
 import javax.inject.Inject
 
 @HiltViewModel
@@ -40,7 +40,10 @@ data class ActionEditState(
     val windows: Set<DayPart> = emptySet(),
     val enabled: Boolean = true,
     val loaded: Boolean = false,
+    /** 保存・削除の処理中。二度押しで 2 件入らないよう、ボタンはこの間無効。 */
+    val saving: Boolean = false,
     val saved: Boolean = false,
+    val error: String? = null,
 ) {
     val valid: Boolean get() = name.isNotBlank() && durationMin > 0 && staminaCost >= 0 && baseGain >= 0
 }
@@ -53,13 +56,15 @@ class ActionEditViewModel @Inject constructor(
     private val id: Long = savedState.get<Long>("id") ?: 0L
     private val _state = MutableStateFlow(ActionEditState(id = id))
     val state: StateFlow<ActionEditState> = _state.asStateFlow()
-    private var createdAt: Instant? = null
+
+    /** 編集対象の元の行。sortOrder / deleted / createdAt など画面に出さない列を保存時に引き継ぐ。 */
+    private var loaded: ActionTemplateEntity? = null
 
     init {
         viewModelScope.launch {
             if (id != 0L) {
                 repo.template(id)?.let { t ->
-                    createdAt = t.createdAt
+                    loaded = t
                     _state.value = ActionEditState(
                         id = t.id, name = t.name, axis = t.axis, durationMin = t.durationMin, staminaCost = t.staminaCost,
                         baseGain = t.baseGain, weight = t.weight, windows = t.windows, enabled = t.enabled, loaded = true,
@@ -81,21 +86,42 @@ class ActionEditViewModel @Inject constructor(
 
     fun toggleWindow(p: DayPart) = update { it.copy(windows = if (p in it.windows) it.windows - p else it.windows + p) }
 
-    fun save() = viewModelScope.launch {
+    fun save() {
         val s = _state.value
-        if (!s.valid) return@launch
-        repo.saveTemplate(
-            ActionTemplateEntity(
-                id = s.id, name = s.name.trim(), axis = s.axis, durationMin = s.durationMin, staminaCost = s.staminaCost,
-                baseGain = s.baseGain, weight = s.weight, windows = s.windows, enabled = s.enabled,
-                createdAt = createdAt ?: Instant.now(),
-            ),
-        )
-        _state.value = s.copy(saved = true)
+        if (!s.valid || s.saving || s.saved) return
+        // 最初の suspend の前にフラグを立てる（二度押しで新規テンプレが 2 件入らないように）
+        _state.value = s.copy(saving = true, error = null)
+        viewModelScope.launch {
+            val base = loaded
+            val entity = if (base != null) {
+                // 元の行を copy して、並び順や論理削除フラグをリセットしない
+                base.copy(
+                    name = s.name.trim(), axis = s.axis, durationMin = s.durationMin, staminaCost = s.staminaCost,
+                    baseGain = s.baseGain, weight = s.weight, windows = s.windows, enabled = s.enabled,
+                )
+            } else {
+                // 新規は末尾に（一覧は axis, sortOrder, id の順）
+                val nextOrder = (repo.observeTemplates().first().maxOfOrNull { it.sortOrder } ?: -1) + 1
+                ActionTemplateEntity(
+                    name = s.name.trim(), axis = s.axis, durationMin = s.durationMin, staminaCost = s.staminaCost,
+                    baseGain = s.baseGain, weight = s.weight, windows = s.windows, enabled = s.enabled,
+                    sortOrder = nextOrder, createdAt = repo.now(),
+                )
+            }
+            runCatching { repo.saveTemplate(entity) }
+                .onSuccess { _state.value = _state.value.copy(saved = true) }
+                .onFailure { e -> _state.value = _state.value.copy(saving = false, error = e.message ?: "保存できなかった") }
+        }
     }
 
-    fun delete() = viewModelScope.launch {
-        if (id != 0L) repo.deleteTemplate(id)
-        _state.value = _state.value.copy(saved = true)
+    fun delete() {
+        val s = _state.value
+        if (s.saving || s.saved) return
+        _state.value = s.copy(saving = true, error = null)
+        viewModelScope.launch {
+            runCatching { if (id != 0L) repo.deleteTemplate(id) }
+                .onSuccess { _state.value = _state.value.copy(saved = true) }
+                .onFailure { e -> _state.value = _state.value.copy(saving = false, error = e.message ?: "削除できなかった") }
+        }
     }
 }

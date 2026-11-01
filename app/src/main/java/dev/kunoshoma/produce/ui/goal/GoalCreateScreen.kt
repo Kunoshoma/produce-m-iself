@@ -4,9 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -65,7 +67,11 @@ fun GoalCreateScreen(onBack: () -> Unit, vm: GoalCreateViewModel = hiltViewModel
             )
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
+        // edge-to-edge なので Scaffold の padding は IME を含まない。名前・チェック項目の入力中はキーボードの分も避ける
+        Column(
+            Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()
+                .padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
+        ) {
             SectionTitle("テンプレから")
             ChipRow(items = vm.presets, selected = { it.name == d.name }, onSelect = vm::applyPreset, label = { it.name })
 
@@ -73,7 +79,11 @@ fun GoalCreateScreen(onBack: () -> Unit, vm: GoalCreateViewModel = hiltViewModel
             OutlinedTextField(value = d.name, onValueChange = { v -> vm.update { it.copy(name = v) } }, label = { Text("目標の名前") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
             ChipRow(items = listOf(2, 4, 6, 8, 12), selected = { it == d.weeks }, onSelect = { w -> vm.update { it.copy(weeks = w) } }, label = { "$it 週" })
-            Text("期限：${d.deadline}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+            Text(
+                d.deadline?.let { "期限：$it（${d.days} 日間）" } ?: "期限：…",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp),
+            )
 
             SectionTitle("ターゲット（${d.targets.size}）")
             if (d.targets.isEmpty()) Text("下から追加。必須のものが全部達成で最終試験に合格。", style = MaterialTheme.typography.bodySmall)
@@ -117,7 +127,7 @@ fun GoalCreateScreen(onBack: () -> Unit, vm: GoalCreateViewModel = hiltViewModel
 
             d.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
             Spacer(Modifier.height(24.dp))
-            Button(onClick = vm::save, enabled = d.valid && !d.saving, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("この目標で始める") }
+            Button(onClick = vm::save, enabled = d.valid && !d.saving && !d.saved, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("この目標で始める") }
             Text("進行中の目標がある場合は中断扱いになって置き換わる。", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
             Spacer(Modifier.height(32.dp))
         }

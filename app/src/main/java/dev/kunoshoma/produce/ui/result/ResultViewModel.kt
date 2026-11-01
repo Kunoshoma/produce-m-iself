@@ -7,12 +7,16 @@ import dev.kunoshoma.produce.core.model.FailReason
 import dev.kunoshoma.produce.core.model.LessonResult
 import dev.kunoshoma.produce.data.db.ActionLogEntity
 import dev.kunoshoma.produce.data.db.ActiveLessonEntity
+import dev.kunoshoma.produce.data.settings.Settings
 import dev.kunoshoma.produce.domain.ProduceRepository
 import dev.kunoshoma.produce.notify.Notifications
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.Instant
 import javax.inject.Inject
 
 data class ResultUiState(
@@ -34,6 +38,17 @@ class ResultViewModel @Inject constructor(
     private val _state = MutableStateFlow(ResultUiState())
     val state: StateFlow<ResultUiState> = _state.asStateFlow()
 
+    /** 軸の表示名（設定で変更可）。null = まだ読めていない。 */
+    val settings: StateFlow<Settings?> =
+        repo.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * この画面を開いた瞬間 ＝ レッスンを止めた時刻。
+     * 「中断」でここに来た場合、自己申告に時間がかかっても獲得の経過比例はこの時刻で計算する（SPEC 3.5）。
+     * タイマー完了後に開いた場合は予定終了より後なので、finishLesson 側で予定時間いっぱいに丸められる。
+     */
+    private val openedAt: Instant = repo.now()
+
     init {
         viewModelScope.launch {
             val lesson = repo.activeLesson()
@@ -52,13 +67,16 @@ class ResultViewModel @Inject constructor(
     }
     fun setNote(n: String) { _state.value = _state.value.copy(note = n) }
 
-    fun save() = viewModelScope.launch {
+    fun save() {
         val s = _state.value
-        val result = s.result ?: return@launch
-        if (s.saving || s.lesson == null) return@launch
+        val result = s.result ?: return
+        if (s.saving || s.saved != null || s.lesson == null) return
+        // 二度押しで 2 件記録しないよう、最初の suspend の前にフラグを立てる
         _state.value = s.copy(saving = true)
-        val reasons = if (result == LessonResult.SUCCESS) emptySet() else s.reasons
-        val saved = repo.finishLesson(result, reasons, s.note.trim())
-        _state.value = _state.value.copy(saving = false, saved = saved)
+        viewModelScope.launch {
+            val reasons = if (result == LessonResult.SUCCESS) emptySet() else s.reasons
+            val saved = repo.finishLesson(result, reasons, s.note.trim(), endedAt = openedAt)
+            _state.value = _state.value.copy(saving = false, saved = saved)
+        }
     }
 }

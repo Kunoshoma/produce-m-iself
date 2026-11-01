@@ -7,6 +7,7 @@ import dev.kunoshoma.produce.core.model.Axis
 import dev.kunoshoma.produce.core.rules.GoalCalculator
 import dev.kunoshoma.produce.data.db.ActionTemplateEntity
 import dev.kunoshoma.produce.data.db.ExamResultEntity
+import dev.kunoshoma.produce.data.db.GoalStatus
 import dev.kunoshoma.produce.data.db.GoalWithTargets
 import dev.kunoshoma.produce.data.db.TargetKind
 import dev.kunoshoma.produce.data.settings.Settings
@@ -15,10 +16,13 @@ import dev.kunoshoma.produce.domain.ProduceRepository
 import dev.kunoshoma.produce.goal.GoalEvaluation
 import dev.kunoshoma.produce.goal.GoalService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -42,13 +46,31 @@ class GoalViewModel @Inject constructor(
         .map { g -> Loaded(g?.let { GoalUi(it, runCatching { service.evaluate(it) }.getOrNull()) }) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** 進行中の目標の試験（中間）。 */
     val exams: StateFlow<List<ExamResultEntity>> = service.observeActive()
         .flatMapLatest { g -> if (g == null) flowOf(emptyList()) else service.observeExams(g.goal.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val history: StateFlow<List<GoalWithTargets>> = service.observeAll()
-        .map { list -> list.filter { it.goal.status != dev.kunoshoma.produce.data.db.GoalStatus.ACTIVE } }
+        .map { list -> list.filter { it.goal.status != GoalStatus.ACTIVE } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * 終わった目標ごとの試験結果（goalId → 新しい順）。
+     * 最終試験で目標が PASSED / FAILED になった瞬間に [exams] は空になるので、
+     * 中間・最終の結果は履歴側からも見返せるようにしておく（SPEC 12.5）。
+     */
+    val historyExams: StateFlow<Map<Long, List<ExamResultEntity>>> = service.observeAll()
+        .map { list -> list.filter { it.goal.status != GoalStatus.ACTIVE }.map { it.goal.id } }
+        .distinctUntilChanged()
+        .flatMapLatest { ids -> examsByGoal(ids) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    private fun examsByGoal(ids: List<Long>): Flow<Map<Long, List<ExamResultEntity>>> {
+        if (ids.isEmpty()) return flowOf<Map<Long, List<ExamResultEntity>>>(emptyMap())
+        val flows: List<Flow<Pair<Long, List<ExamResultEntity>>>> = ids.map { id -> service.observeExams(id).map { list -> id to list } }
+        return combine(flows) { pairs -> pairs.toMap() }
+    }
 
     init {
         viewModelScope.launch { runCatching { service.runFinalExamIfDue() } }
@@ -68,18 +90,27 @@ data class GoalDraft(
     val name: String = "",
     val weeks: Int = 8,
     val targets: List<DraftTarget> = emptyList(),
+    /** 開始日（プロデュース日付）。null = まだ読めていない。 */
+    val startDate: LocalDate? = null,
     val saving: Boolean = false,
     val saved: Boolean = false,
     val error: String? = null,
 ) {
-    val deadline: LocalDate get() = LocalDate.now().plusWeeks(weeks.toLong())
+    /**
+     * 期限は「開始日 + N 週」。開始日は暦日ではなくプロデュース日付（日付境界 5 時）なので、
+     * 深夜 0 時〜境界の間に作っても GoalService.create の startDate と 1 日ずれない。
+     */
+    val deadline: LocalDate? get() = startDate?.plusWeeks(weeks.toLong())
     val valid: Boolean get() = targets.isNotEmpty() && name.isNotBlank()
+
+    /** 目標画面の daysLeft は今日と期限日を両方含む（deadline - today + 1）ので、作成日時点では N 週 + 1 日。 */
+    val days: Int get() = weeks * 7 + 1
 }
 
 @HiltViewModel
 class GoalCreateViewModel @Inject constructor(
     private val service: GoalService,
-    repo: ProduceRepository,
+    private val repo: ProduceRepository,
     settingsRepo: SettingsRepository,
 ) : ViewModel() {
     val settings: StateFlow<Settings?> = settingsRepo.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -88,6 +119,13 @@ class GoalCreateViewModel @Inject constructor(
 
     private val _draft = MutableStateFlow(GoalDraft())
     val draft: StateFlow<GoalDraft> = _draft.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val today = repo.today()
+            update { it.copy(startDate = today) }
+        }
+    }
 
     fun update(block: (GoalDraft) -> GoalDraft) { _draft.value = block(_draft.value) }
 
@@ -101,19 +139,23 @@ class GoalCreateViewModel @Inject constructor(
     fun removeTarget(index: Int) = update { it.copy(targets = it.targets.filterIndexed { i, _ -> i != index }) }
     fun toggleRequired(index: Int) = update { it.copy(targets = it.targets.mapIndexed { i, t -> if (i == index) t.copy(required = !t.required) else t }) }
 
-    /** 作成前のプレビュー：1 日あたりの必要量（SPEC 12.6）。 */
-    fun perDay(t: DraftTarget): Double = GoalCalculator.evaluate(t.value, 0, 1, _draft.value.weeks * 7).requiredPerDay
+    /** 作成前のプレビュー：1 日あたりの必要量（SPEC 12.6）。作成後に目標画面が出す値と同じ日数で割る。 */
+    fun perDay(t: DraftTarget): Double = GoalCalculator.evaluate(t.value, 0, 1, _draft.value.days).requiredPerDay
 
-    fun save() = viewModelScope.launch {
+    fun save() {
         val d = _draft.value
-        if (!d.valid || d.saving) return@launch
+        if (!d.valid || d.saving || d.saved) return
         _draft.value = d.copy(saving = true, error = null)
-        runCatching {
-            service.create(
-                name = d.name, deadline = d.deadline,
-                targets = d.targets.map { GoalService.NewTarget(it.kind, it.ref, it.label, it.value, it.required) },
-            )
-        }.onSuccess { _draft.value = _draft.value.copy(saving = false, saved = true) }
-            .onFailure { e -> _draft.value = _draft.value.copy(saving = false, error = e.message ?: "作成できなかった") }
+        viewModelScope.launch {
+            runCatching {
+                // 期限は保存時点のプロデュース日付から数える（画面を開いたまま日付境界をまたいでも N 週ちょうど）
+                val start = repo.today()
+                service.create(
+                    name = d.name, deadline = start.plusWeeks(d.weeks.toLong()),
+                    targets = d.targets.map { GoalService.NewTarget(it.kind, it.ref, it.label, it.value, it.required) },
+                )
+            }.onSuccess { _draft.value = _draft.value.copy(saving = false, saved = true) }
+                .onFailure { e -> _draft.value = _draft.value.copy(saving = false, error = e.message ?: "作成できなかった") }
+        }
     }
 }
