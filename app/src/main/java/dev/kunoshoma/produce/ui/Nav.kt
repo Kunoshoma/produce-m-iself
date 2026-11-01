@@ -43,23 +43,38 @@ object Routes {
     fun actionEdit(id: Long) = "action_edit/$id"
 }
 
+/**
+ * [route] の画面が最前面にあるときだけ 1 つ戻る。
+ * 戻る矢印を素早く 2 回タップすると、1 回目で pop された画面がフェードアウト中に 2 回目のタップを受け取り、
+ * その下の HOME まで pop されて真っ黒な NavHost だけが残る。pop 元の画面が今の destination であること
+ * （＝まだ pop されていない）と、下に戻り先があることを確認してから pop する。
+ */
+private fun NavHostController.popFrom(route: String) {
+    if (currentDestination?.route == route && previousBackStackEntry != null) popBackStack()
+}
+
+/** HOME からの前進。ボタンの 2 度押しで同じ画面が 2 枚積まれないようにする。 */
+private fun NavHostController.go(route: String) {
+    navigate(route) { launchSingleTop = true }
+}
+
 @Composable
 fun ProduceNavHost(nav: NavHostController) {
     NavHost(navController = nav, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
             HomeScreen(
-                onProduce = { nav.navigate(Routes.PRODUCE) },
-                onLesson = { nav.navigate(Routes.LESSON) },
-                onManual = { nav.navigate(Routes.MANUAL) },
-                onActions = { nav.navigate(Routes.ACTIONS) },
-                onSettings = { nav.navigate(Routes.SETTINGS) },
-                onReports = { nav.navigate(Routes.REPORTS) },
-                onGoal = { nav.navigate(Routes.GOAL) },
+                onProduce = { nav.go(Routes.PRODUCE) },
+                onLesson = { nav.go(Routes.LESSON) },
+                onManual = { nav.go(Routes.MANUAL) },
+                onActions = { nav.go(Routes.ACTIONS) },
+                onSettings = { nav.go(Routes.SETTINGS) },
+                onReports = { nav.go(Routes.REPORTS) },
+                onGoal = { nav.go(Routes.GOAL) },
             )
         }
         composable(Routes.PRODUCE) {
             ProduceScreen(
-                onBack = { nav.popBackStack() },
+                onBack = { nav.popFrom(Routes.PRODUCE) },
                 onLessonStarted = { nav.navigate(Routes.LESSON) { popUpTo(Routes.HOME) } },
                 onDone = { nav.popBackStack(Routes.HOME, inclusive = false) },
             )
@@ -75,7 +90,7 @@ fun ProduceNavHost(nav: NavHostController) {
         }
         composable(Routes.ACTIONS) {
             ActionsScreen(
-                onBack = { nav.popBackStack() },
+                onBack = { nav.popFrom(Routes.ACTIONS) },
                 onEdit = { id -> nav.navigate(Routes.actionEdit(id)) },
             )
         }
@@ -83,35 +98,35 @@ fun ProduceNavHost(nav: NavHostController) {
             Routes.ACTION_EDIT,
             arguments = listOf(navArgument("id") { type = NavType.LongType }),
         ) { entry ->
-            ActionEditScreen(id = entry.arguments?.getLong("id") ?: 0L, onBack = { nav.popBackStack() })
+            ActionEditScreen(id = entry.arguments?.getLong("id") ?: 0L, onBack = { nav.popFrom(Routes.ACTION_EDIT) })
         }
         composable(Routes.MANUAL) {
-            ManualLogScreen(onBack = { nav.popBackStack() })
+            ManualLogScreen(onBack = { nav.popFrom(Routes.MANUAL) })
         }
         composable(Routes.SETTINGS) {
-            SettingsScreen(onBack = { nav.popBackStack() }, onBlockedApps = { nav.navigate(Routes.BLOCKED_APPS) })
+            SettingsScreen(onBack = { nav.popFrom(Routes.SETTINGS) }, onBlockedApps = { nav.go(Routes.BLOCKED_APPS) })
         }
         composable(Routes.BLOCKED_APPS) {
-            BlockedAppsScreen(onBack = { nav.popBackStack() })
+            BlockedAppsScreen(onBack = { nav.popFrom(Routes.BLOCKED_APPS) })
         }
         composable(Routes.GOAL) {
-            GoalScreen(onBack = { nav.popBackStack() }, onCreate = { nav.navigate(Routes.GOAL_CREATE) })
+            GoalScreen(onBack = { nav.popFrom(Routes.GOAL) }, onCreate = { nav.go(Routes.GOAL_CREATE) })
         }
         composable(Routes.GOAL_CREATE) {
-            GoalCreateScreen(onBack = { nav.popBackStack() })
+            GoalCreateScreen(onBack = { nav.popFrom(Routes.GOAL_CREATE) })
         }
         composable(Routes.REPORTS) {
             ReportsScreen(
-                onBack = { nav.popBackStack() },
+                onBack = { nav.popFrom(Routes.REPORTS) },
                 onDaily = { nav.navigate(Routes.dailyReport(it)) },
                 onWeekly = { nav.navigate(Routes.weeklyReport(it)) },
             )
         }
         composable(Routes.DAILY_REPORT, arguments = listOf(navArgument("date") { type = NavType.StringType })) { entry ->
-            DailyReportScreen(date = entry.arguments?.getString("date") ?: "", onBack = { nav.popBackStack() })
+            DailyReportScreen(date = entry.arguments?.getString("date") ?: "", onBack = { nav.popFrom(Routes.DAILY_REPORT) })
         }
         composable(Routes.WEEKLY_REPORT, arguments = listOf(navArgument("weekStart") { type = NavType.StringType })) { entry ->
-            WeeklyReportScreen(weekStart = entry.arguments?.getString("weekStart") ?: "", onBack = { nav.popBackStack() })
+            WeeklyReportScreen(weekStart = entry.arguments?.getString("weekStart") ?: "", onBack = { nav.popFrom(Routes.WEEKLY_REPORT) })
         }
     }
 }

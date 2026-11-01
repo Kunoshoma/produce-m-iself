@@ -1,6 +1,5 @@
 package dev.kunoshoma.produce.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -36,7 +35,8 @@ private val LightScheme = lightColorScheme(
 )
 
 @Composable
-fun ProduceTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+/** ダーク基調（SPEC 7 章）。プラットフォームテーマ・ウィジェットもダーク固定なので Compose 側も合わせる。 */
+fun ProduceTheme(darkTheme: Boolean = true, content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = if (darkTheme) DarkScheme else LightScheme, content = content)
 }
 

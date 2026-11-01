@@ -24,6 +24,7 @@ import dev.kunoshoma.produce.ui.theme.ProduceTheme
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    /** 通知・ウィジェット・割り込み画面から渡された遷移先。消費したら null に戻す。 */
     private var pendingRoute by mutableStateOf<String?>(null)
 
     private val notificationPermission =
@@ -32,8 +33,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        pendingRoute = intent?.getStringExtra(EXTRA_ROUTE)
-        requestNotificationPermissionIfNeeded()
+        // 回転やダークモード切替での再生成では Intent を読み直さない。
+        // 読み直すと「レッスン終了」通知の route=result が回転ごとに再送され、
+        // 記録済みなのに結果画面へ飛ばされる。NavController 側は自前で back stack を復元する。
+        if (savedInstanceState == null) {
+            pendingRoute = consumeRoute(intent)
+            requestNotificationPermissionIfNeeded()
+        }
         setContent {
             ProduceTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -42,7 +48,15 @@ class MainActivity : ComponentActivity() {
                     val route = pendingRoute
                     LaunchedEffect(route) {
                         if (route != null) {
-                            nav.navigate(route) { launchSingleTop = true }
+                            // タイマー / 結果画面はホーム直上に置く（Nav.kt と同じ）。
+                            // 割り込み画面からレッスンを始めたとき、下に古い 3 択画面が残らないようにする。
+                            // すでにその画面が最前面なら pop せず、入力途中の状態を守る。
+                            val popToHome = (route == Routes.LESSON || route == Routes.RESULT) &&
+                                nav.currentDestination?.route != route
+                            nav.navigate(route) {
+                                launchSingleTop = true
+                                if (popToHome) popUpTo(Routes.HOME)
+                            }
                             pendingRoute = null
                         }
                     }
@@ -53,7 +67,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.getStringExtra(EXTRA_ROUTE)?.let { pendingRoute = it }
+        // getIntent() を最新にしておく（singleTask なので 2 回目以降はここに来る）
+        setIntent(intent)
+        consumeRoute(intent)?.let { pendingRoute = it }
+    }
+
+    /** Intent から遷移先を 1 回だけ取り出す。取り出したら extra を消し、Activity 再生成時に再送されないようにする。 */
+    private fun consumeRoute(intent: Intent?): String? {
+        if (intent == null) return null
+        val route = intent.getStringExtra(EXTRA_ROUTE) ?: return null
+        intent.removeExtra(EXTRA_ROUTE)
+        return route
     }
 
     private fun requestNotificationPermissionIfNeeded() {
