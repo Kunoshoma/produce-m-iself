@@ -109,7 +109,9 @@ fun InterruptScreen(
             .safeDrawingPadding()
             // 画面のどこを押しても 3 秒でバイパス。Initial パスで見るのでカードやボタンの上でも効く。
             // 指が動いたら（スクロール）やめる。
-            .pointerInput(packageName) {
+            .pointerInput(packageName, lessonMode) {
+                // レッスン中画面ではバイパスは効かない（ゲートはレッスン優先）ので、長押しで回数だけ消費しないようにする
+                if (lessonMode) return@pointerInput
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     val slop = viewConfiguration.touchSlop

@@ -2,6 +2,7 @@ package dev.kunoshoma.produce.interrupt
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -68,7 +69,7 @@ class InterruptActivity : ComponentActivity() {
 
     /** 休む・バイパスが成立した時刻。サービス側が、直後に戻ってくる娯楽アプリのイベントを通すのに使う。 */
     private fun noteGrant() {
-        lastGrantAt = System.currentTimeMillis()
+        lastGrantAt = SystemClock.elapsedRealtime()
     }
 
     private fun openApp(route: String) {
@@ -98,7 +99,7 @@ class InterruptActivity : ComponentActivity() {
         /** 割り込み画面が前面にあるか（onResume〜onPause）。サービスの再起動抑制に使う。 */
         @Volatile var isShowing: Boolean = false
 
-        /** 直前に休む・バイパスが成立した時刻（epoch millis）。0 なら未成立。 */
+        /** 直前に休む・バイパスが成立した時刻（SystemClock.elapsedRealtime）。0 なら未成立。 */
         @Volatile var lastGrantAt: Long = 0L
     }
 }

@@ -2,6 +2,7 @@ package dev.kunoshoma.produce.interrupt
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import dagger.hilt.android.AndroidEntryPoint
 import dev.kunoshoma.produce.data.settings.Settings
@@ -38,6 +39,7 @@ class InterruptAccessibilityService : AccessibilityService() {
 
     private var lastLaunchPackage: String? = null
     private var lastLaunchMode: String? = null
+    // 時刻は SystemClock.elapsedRealtime()（単調増加）。端末の時計を戻されても抑制が壊れない
     private var lastLaunchAt: Long = 0
     private var lastDerailAt: Long = 0
 
@@ -72,13 +74,13 @@ class InterruptAccessibilityService : AccessibilityService() {
         // 状態がまだ読めていないうちは判断しない（fail open）。起動直後の誤割り込みを防ぐ
         val h = home ?: return
         // 割り込み画面で休む・バイパスが成立した直後は、homeState の更新が追い付く前のイベントを通す
-        if (System.currentTimeMillis() - InterruptActivity.lastGrantAt < GRANT_GRACE_MILLIS) return
+        if (SystemClock.elapsedRealtime() - InterruptActivity.lastGrantAt < GRANT_GRACE_MILLIS) return
         val now = Instant.now()
         when (InterruptGate.decide(pkg, blocked, s, h, now)) {
             Decision.Allow -> Unit
             Decision.ShowChoices -> launchInterrupt(pkg, InterruptActivity.MODE_CHOICES)
             Decision.BlockDuringLesson -> {
-                val t = System.currentTimeMillis()
+                val t = SystemClock.elapsedRealtime()
                 if (t - lastDerailAt > 10_000) {
                     lastDerailAt = t
                     scope.launch { repo.recordDerail() }
@@ -93,7 +95,7 @@ class InterruptAccessibilityService : AccessibilityService() {
     }
 
     private fun launchInterrupt(pkg: String, mode: String) {
-        val t = System.currentTimeMillis()
+        val t = SystemClock.elapsedRealtime()
         val same = pkg == lastLaunchPackage && mode == lastLaunchMode
         // 対象アプリ起動直後の連続イベントは 1 回にまとめる。それ以降は割り込み画面が前面にある間だけ抑制し、
         // 戻る・タスク終了などで決定なしに消えたら即出し直す（singleInstance なので重複起動は onNewIntent になる）
@@ -130,6 +132,7 @@ class InterruptAccessibilityService : AccessibilityService() {
         private const val GRANT_GRACE_MILLIS = 2_000L
 
         /** サービスのライフサイクルに縛られない一回限りの DB 書き込み用（service_gaps の開閉）。 */
-        private val writeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        // 開く・閉じるの読み書きが追い越さないよう 1 本ずつ流す
+        private val writeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     }
 }
