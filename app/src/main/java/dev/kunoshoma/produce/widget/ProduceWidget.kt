@@ -2,6 +2,8 @@ package dev.kunoshoma.produce.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,8 +60,14 @@ class ProduceWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val repo = EntryPointAccessors.fromApplication(context, Deps::class.java).repo()
-        val state = withTimeoutOrNull(5_000) { repo.homeState.first() }
-        provideContent { GlanceTheme { Content(state) } }
+        // 最初の描画用に 1 回だけ待つ（取れなければプレースホルダ）。
+        // Glance はセッションが生きている間、update() で provideContent より前のコードを再実行しない。
+        // そのため状態は composition の中で Flow を購読し、update() の再コンポーズで最新値が描かれるようにする。
+        val initial = withTimeoutOrNull(5_000) { repo.homeState.first() }
+        provideContent {
+            val state by repo.homeState.collectAsState(initial = initial)
+            GlanceTheme { Content(state) }
+        }
     }
 
     @Composable

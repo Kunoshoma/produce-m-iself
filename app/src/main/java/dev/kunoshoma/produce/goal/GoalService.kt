@@ -1,5 +1,6 @@
 package dev.kunoshoma.produce.goal
 
+import androidx.room.withTransaction
 import dev.kunoshoma.produce.core.model.Axis
 import dev.kunoshoma.produce.core.rules.BackCalc
 import dev.kunoshoma.produce.core.rules.Feasibility
@@ -7,6 +8,7 @@ import dev.kunoshoma.produce.core.rules.GoalCalculator
 import dev.kunoshoma.produce.core.rules.Judgement
 import dev.kunoshoma.produce.core.time.ProduceCalendar
 import dev.kunoshoma.produce.data.db.ActionTemplateDao
+import dev.kunoshoma.produce.data.db.AppDatabase
 import dev.kunoshoma.produce.data.db.DayStateDao
 import dev.kunoshoma.produce.data.db.ExamKind
 import dev.kunoshoma.produce.data.db.ExamResultDao
@@ -73,6 +75,7 @@ data class GoalEvaluation(
 
 @Singleton
 class GoalService @Inject constructor(
+    private val db: AppDatabase,
     private val goals: GoalDao,
     private val exams: ExamResultDao,
     private val templates: ActionTemplateDao,
@@ -97,10 +100,16 @@ class GoalService @Inject constructor(
         require(targets.isNotEmpty()) { "ターゲットを 1 つ以上" }
         val start = today()
         require(deadline.isAfter(start)) { "期限は明日以降" }
-        goals.active()?.let { abandon(it.goal.id) }
-        val id = goals.insertGoal(GoalEntity(name = name.trim().ifBlank { "目標" }, startDate = start, deadline = deadline, note = note, createdAt = clock.instant()))
-        goals.insertTargets(targets.map { GoalTargetEntity(goalId = id, kind = it.kind, ref = it.ref, label = it.label, targetValue = it.targetValue.coerceAtLeast(1), required = it.required) })
-        return id
+        val now = clock.instant()
+        val goal = GoalEntity(name = name.trim().ifBlank { "目標" }, startDate = start, deadline = deadline, note = note, createdAt = now)
+        // 前の目標の放棄・目標の挿入・ターゲットの挿入は 1 トランザクション。
+        // 途中で落ちるとターゲット 0 件の目標が残り、最終試験が空振りで合格してしまう
+        return db.withTransaction {
+            goals.active()?.let { goals.updateGoal(it.goal.copy(status = GoalStatus.ABANDONED, closedAt = now)) }
+            val id = goals.insertGoal(goal)
+            goals.insertTargets(targets.map { GoalTargetEntity(goalId = id, kind = it.kind, ref = it.ref, label = it.label, targetValue = it.targetValue.coerceAtLeast(1), required = it.required) })
+            id
+        }
     }
 
     suspend fun abandon(goalId: Long) {
@@ -169,7 +178,8 @@ class GoalService @Inject constructor(
         val feasibility: Feasibility = GoalCalculator.feasibility(axisCalcs, available)
 
         val requiredTargets = evaluations.filter { it.required }
-        val requiredAllMet = requiredTargets.all { it.judgement == Judgement.ACHIEVED }
+        // 必須ターゲットが 1 つも無い目標（作成途中で落ちたものなど）は「全必須達成」にしない
+        val requiredAllMet = requiredTargets.isNotEmpty() && requiredTargets.all { it.judgement == Judgement.ACHIEVED }
         val overall = evaluations.maxByOrNull { it.judgement.ordinal }?.judgement ?: Judgement.ON_TRACK
         val progress = if (evaluations.isEmpty()) 0.0 else evaluations.map { (it.current.toDouble() / it.target).coerceIn(0.0, 1.0) }.average()
         val bias = Axis.entries.associateWith { a ->
@@ -186,7 +196,7 @@ class GoalService @Inject constructor(
     /** 3 択の重み。目標がなければ空。 */
     suspend fun currentAxisBias(): Map<Axis, Double> = goals.active()?.let { evaluate(it).axisBias } ?: emptyMap()
 
-    /** 中間試験（週次レポート時）。同じ日に 2 回は作らない。 */
+    /** 中間試験（週次レポート時）。同じ日に 2 回は作らない（バックフィルが同時に走っても）。 */
     suspend fun recordMidExam(date: LocalDate): ExamResultEntity? {
         val g = goals.active() ?: return null
         if (date.isAfter(g.goal.deadline) || date.isBefore(g.goal.startDate)) return null
@@ -197,16 +207,29 @@ class GoalService @Inject constructor(
             summary = "中間試験：${ev.overall.label}。${ev.summaryLine}",
             json = json.encodeToString(GoalEvaluation.serializer(), ev), createdAt = clock.instant(),
         )
-        exams.insert(e)
-        return e
+        // 確認と挿入を 1 トランザクションに（exam_results に一意制約が無いので、ここで二重作成を防ぐ）
+        return db.withTransaction {
+            exams.find(g.goal.id, ExamKind.MID, date) ?: e.copy(id = exams.insert(e))
+        }
     }
 
-    /** 期限を過ぎた ACTIVE な目標に最終試験を実施して状態を確定する。 */
+    /**
+     * 期限を過ぎた ACTIVE な目標に最終試験を実施して状態を確定する。
+     * 試験結果の挿入と目標の状態更新は 1 トランザクション（片方だけ残ると、目標が開いたまま毎回通知が鳴る）。
+     */
     suspend fun runFinalExamIfDue(): ExamResultEntity? {
         val g = goals.active() ?: return null
         val today = today()
         if (!today.isAfter(g.goal.deadline)) return null
-        exams.find(g.goal.id, ExamKind.FINAL, g.goal.deadline)?.let { return it }
+        exams.find(g.goal.id, ExamKind.FINAL, g.goal.deadline)?.let { existing ->
+            // 試験は済んでいるのに目標が開いたまま（以前の版で途中で落ちた）なら、ここで閉じる
+            db.withTransaction {
+                goals.byId(g.goal.id)?.goal?.takeIf { it.status == GoalStatus.ACTIVE }?.let { open ->
+                    goals.updateGoal(open.copy(status = finalStatus(existing.passed == true), closedAt = clock.instant()))
+                }
+            }
+            return existing
+        }
         val ev = evaluate(g, g.goal.deadline)
         val passed = ev.requiredAllMet
         val e = ExamResultEntity(
@@ -214,10 +237,25 @@ class GoalService @Inject constructor(
             summary = if (passed) "最終試験：合格！" else "最終試験：不合格。${ev.summaryLine}",
             json = json.encodeToString(GoalEvaluation.serializer(), ev), createdAt = clock.instant(),
         )
-        exams.insert(e)
-        goals.updateGoal(g.goal.copy(status = if (passed) GoalStatus.PASSED else GoalStatus.FAILED, closedAt = clock.instant()))
-        return e
+        return db.withTransaction {
+            val dup = exams.find(g.goal.id, ExamKind.FINAL, g.goal.deadline)
+            if (dup != null) {
+                dup
+            } else {
+                // 目標が同時に放棄されていたら試験はしない
+                val current = goals.byId(g.goal.id)?.goal
+                if (current == null || current.status != GoalStatus.ACTIVE) {
+                    null
+                } else {
+                    val id = exams.insert(e)
+                    goals.updateGoal(current.copy(status = finalStatus(passed), closedAt = clock.instant()))
+                    e.copy(id = id)
+                }
+            }
+        }
     }
+
+    private fun finalStatus(passed: Boolean): GoalStatus = if (passed) GoalStatus.PASSED else GoalStatus.FAILED
 
     fun decode(e: ExamResultEntity): GoalEvaluation? = runCatching { json.decodeFromString(GoalEvaluation.serializer(), e.json) }.getOrNull()
 

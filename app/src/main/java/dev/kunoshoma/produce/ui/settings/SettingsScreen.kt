@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -44,10 +45,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.kunoshoma.produce.core.model.Axis
+import dev.kunoshoma.produce.core.rules.RankThresholds
 import dev.kunoshoma.produce.ui.actions.NumberField
 import dev.kunoshoma.produce.ui.components.ChipRow
 import dev.kunoshoma.produce.ui.components.SectionTitle
@@ -154,11 +157,31 @@ fun SettingsScreen(onBack: () -> Unit, onBlockedApps: () -> Unit = {}, vm: Setti
             ChipRow(items = (0..8).toList(), selected = { it == s.dayBoundaryHour }, onSelect = { h -> vm.update { it.copy(dayBoundaryHour = h) } }, label = { "$it 時" })
 
             SectionTitle("週ランクの閾値")
+            // 4 つまとめて検証する（S > A > B > C > 0）。途中の値や順序違いは保存せず、欄を赤くして知らせる。
+            // 1 欄ずつ保存すると「S を 250 にしたい」が A=280 に引っかかって黙って捨てられる
+            var rankS by remember(s.rank) { mutableStateOf(s.rank.s.toString()) }
+            var rankA by remember(s.rank) { mutableStateOf(s.rank.a.toString()) }
+            var rankB by remember(s.rank) { mutableStateOf(s.rank.b.toString()) }
+            var rankC by remember(s.rank) { mutableStateOf(s.rank.c.toString()) }
+            val rankCandidate = runCatching {
+                RankThresholds(s = rankS.toInt(), a = rankA.toInt(), b = rankB.toInt(), c = rankC.toInt())
+            }.getOrNull()
+            val rankInvalid = rankCandidate == null
+            fun commitRank(sS: String, sA: String, sB: String, sC: String) {
+                val next = runCatching { RankThresholds(s = sS.toInt(), a = sA.toInt(), b = sB.toInt(), c = sC.toInt()) }.getOrNull() ?: return
+                vm.update { it.copy(rank = next) }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                NumberField("S", s.rank.s, Modifier.weight(1f)) { v -> vm.update { it.copy(rank = it.rank.copy(s = v)) } }
-                NumberField("A", s.rank.a, Modifier.weight(1f)) { v -> vm.update { it.copy(rank = it.rank.copy(a = v)) } }
-                NumberField("B", s.rank.b, Modifier.weight(1f)) { v -> vm.update { it.copy(rank = it.rank.copy(b = v)) } }
-                NumberField("C", s.rank.c, Modifier.weight(1f)) { v -> vm.update { it.copy(rank = it.rank.copy(c = v)) } }
+                RankField("S", rankS, rankInvalid, Modifier.weight(1f)) { v -> rankS = v; commitRank(v, rankA, rankB, rankC) }
+                RankField("A", rankA, rankInvalid, Modifier.weight(1f)) { v -> rankA = v; commitRank(rankS, v, rankB, rankC) }
+                RankField("B", rankB, rankInvalid, Modifier.weight(1f)) { v -> rankB = v; commitRank(rankS, rankA, v, rankC) }
+                RankField("C", rankC, rankInvalid, Modifier.weight(1f)) { v -> rankC = v; commitRank(rankS, rankA, rankB, v) }
+            }
+            if (rankInvalid) {
+                Text(
+                    "S > A > B > C > 0 の順になるように。直るまで保存されない（保存中の値：S ${s.rank.s} / A ${s.rank.a} / B ${s.rank.b} / C ${s.rank.c}）",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp),
+                )
             }
 
             SectionTitle("軸の名前")
@@ -177,7 +200,10 @@ fun SettingsScreen(onBack: () -> Unit, onBlockedApps: () -> Unit = {}, vm: Setti
                 FilledTonalButton(onClick = { exportLauncher.launch(BackupManager.suggestedFileName()) }, modifier = Modifier.weight(1f)) { Text("JSON に書き出す") }
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) }, modifier = Modifier.weight(1f)) { Text("JSON から復元") }
             }
-            Text("週次レポート生成時にアプリ専用フォルダ（Android/data/…/files/backups）にも直近 4 世代を自動保存。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+            Text(
+                "日付が変わるごとに Download/${BackupManager.AUTO_BACKUP_FOLDER} フォルダへ直近 ${BackupManager.KEEP_GENERATIONS} 世代を自動保存（アンインストールしても残る）。戻すときは「JSON から復元」でそのファイルを選ぶ。",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
+            )
 
             Spacer(Modifier.height(16.dp))
             Text("このアプリは通信しません（INTERNET 権限なし）。データは端末内だけ。", style = MaterialTheme.typography.bodySmall)
@@ -194,4 +220,18 @@ fun SettingsScreen(onBack: () -> Unit, onBlockedApps: () -> Unit = {}, vm: Setti
             dismissButton = { TextButton(onClick = { confirmImport = null }) { Text("やめる") } },
         )
     }
+}
+
+/** ランク閾値の 1 欄。検証は 4 欄まとめて行うので、ここでは数字だけ受け取って見た目（isError）を出す。 */
+@Composable
+private fun RankField(label: String, value: String, isError: Boolean, modifier: Modifier = Modifier, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { v -> onChange(v.filter { it.isDigit() }.take(5)) },
+        label = { Text(label) },
+        singleLine = true,
+        isError = isError,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier,
+    )
 }
