@@ -1,0 +1,80 @@
+name: Android CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      # 任意: base64 化した debug.keystore をリポジトリ secret に置くと、CI と手元の Android Studio で
+      # 同じ鍵が使える（`base64 -w0 ~/.android/debug.keystore` の出力を DEBUG_KEYSTORE_B64 に登録）。
+      DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # debug 署名鍵をラン間で固定する。毎回ランダム生成されると前の APK の上に新しい APK を
+      # 上書きインストールできず（INSTALL_FAILED_UPDATE_INCOMPATIBLE）、アンインストール＝全データ消去になる。
+      # 初回ランで Gradle が生成した鍵を保存し、以降のランはそれを復元して使う。
+      - name: Restore debug keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
+
+      - name: Use shared debug keystore from secret
+        if: ${{ env.DEBUG_KEYSTORE_B64 != '' }}
+        run: |
+          mkdir -p ~/.android
+          echo "$DEBUG_KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Core unit tests
+        run: ./gradlew :core:test --console=plain --no-daemon
+
+      - name: App unit tests
+        run: ./gradlew :app:testDebugUnitTest --console=plain --no-daemon
+
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug --console=plain --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: produce-m-iself-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30
+
+      # Room がエクスポートしたスキーマ JSON（将来のマイグレーションの基準）。
+      # リポジトリに app/schemas をコミットするときはここから取る。
+      - name: Upload Room schemas
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-schemas
+          path: app/schemas
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            core/build/reports/tests
+            app/build/reports/tests
+          retention-days: 7

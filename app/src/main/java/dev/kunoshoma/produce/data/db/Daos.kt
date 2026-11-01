@@ -1,0 +1,262 @@
+package dev.kunoshoma.produce.data.db
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import dev.kunoshoma.produce.core.model.Axis
+import kotlinx.coroutines.flow.Flow
+import java.time.LocalDate
+
+@Dao
+interface ActionTemplateDao {
+    @Query("SELECT * FROM action_templates WHERE deleted = 0 ORDER BY axis, sortOrder, id")
+    fun observeAll(): Flow<List<ActionTemplateEntity>>
+
+    @Query("SELECT * FROM action_templates WHERE deleted = 0 AND enabled = 1")
+    suspend fun enabled(): List<ActionTemplateEntity>
+
+    @Query("SELECT * FROM action_templates WHERE id = :id")
+    suspend fun byId(id: Long): ActionTemplateEntity?
+
+    @Query("SELECT COUNT(*) FROM action_templates")
+    suspend fun count(): Int
+
+    @Insert suspend fun insert(e: ActionTemplateEntity): Long
+    @Insert suspend fun insertAll(e: List<ActionTemplateEntity>)
+    @Update suspend fun update(e: ActionTemplateEntity)
+
+    @Query("UPDATE action_templates SET deleted = 1, enabled = 0 WHERE id = :id")
+    suspend fun softDelete(id: Long)
+}
+
+data class AxisGain(val axis: Axis, val total: Int)
+data class DateLessonCount(val produceDate: LocalDate, val lessons: Int)
+
+@Dao
+interface ActionLogDao {
+    @Insert suspend fun insert(e: ActionLogEntity): Long
+
+    @Query("SELECT * FROM action_logs WHERE produceDate = :date ORDER BY startedAt DESC")
+    fun observeByDate(date: LocalDate): Flow<List<ActionLogEntity>>
+
+    @Query("SELECT * FROM action_logs WHERE produceDate BETWEEN :from AND :to ORDER BY startedAt")
+    suspend fun between(from: LocalDate, to: LocalDate): List<ActionLogEntity>
+
+    @Query("SELECT axis, COALESCE(SUM(gain), 0) AS total FROM action_logs GROUP BY axis")
+    fun observeTotals(): Flow<List<AxisGain>>
+
+    @Query("SELECT axis, COALESCE(SUM(gain), 0) AS total FROM action_logs WHERE produceDate BETWEEN :from AND :to GROUP BY axis")
+    fun observeTotalsBetween(from: LocalDate, to: LocalDate): Flow<List<AxisGain>>
+
+    @Query("SELECT produceDate, COUNT(*) AS lessons FROM action_logs WHERE produceDate BETWEEN :from AND :to GROUP BY produceDate")
+    suspend fun lessonCounts(from: LocalDate, to: LocalDate): List<DateLessonCount>
+
+    @Query("SELECT COUNT(*) FROM action_logs WHERE produceDate = :date")
+    suspend fun countOn(date: LocalDate): Int
+
+    @Query("SELECT produceDate, axis, COALESCE(SUM(gain), 0) AS total FROM action_logs WHERE produceDate BETWEEN :from AND :to GROUP BY produceDate, axis")
+    suspend fun dailyGains(from: LocalDate, to: LocalDate): List<DateAxisGain>
+
+    @Query("SELECT axis, COALESCE(SUM(gain), 0) AS total FROM action_logs WHERE produceDate <= :date GROUP BY axis")
+    suspend fun totalsUpTo(date: LocalDate): List<AxisGain>
+
+    @Query("SELECT MIN(produceDate) FROM action_logs")
+    suspend fun firstDate(): LocalDate?
+
+    @Query("SELECT * FROM action_logs WHERE id = :id")
+    suspend fun byId(id: Long): ActionLogEntity?
+
+    @Query("DELETE FROM action_logs WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Dao
+interface RestLogDao {
+    @Insert suspend fun insert(e: RestLogEntity): Long
+    @Update suspend fun update(e: RestLogEntity)
+
+    @Query("SELECT * FROM rest_logs WHERE id = :id")
+    suspend fun byId(id: Long): RestLogEntity?
+
+    @Query("SELECT * FROM rest_logs WHERE produceDate = :date ORDER BY startedAt DESC")
+    fun observeByDate(date: LocalDate): Flow<List<RestLogEntity>>
+
+    @Query("SELECT * FROM rest_logs WHERE produceDate BETWEEN :from AND :to ORDER BY startedAt")
+    suspend fun between(from: LocalDate, to: LocalDate): List<RestLogEntity>
+
+    /** 進行中の休む（endedAt が null なのは REST だけ）。日付境界をまたいでも追える。 */
+    @Query("SELECT * FROM rest_logs WHERE endedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
+    suspend fun openRest(): RestLogEntity?
+
+    @Query("SELECT * FROM rest_logs WHERE endedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
+    fun observeOpenRest(): Flow<RestLogEntity?>
+
+    @Query("DELETE FROM rest_logs WHERE actionLogId = :actionLogId")
+    suspend fun deleteByActionLog(actionLogId: Long)
+}
+
+@Dao
+interface DayStateDao {
+    @Query("SELECT * FROM day_states WHERE date = :date")
+    suspend fun byDate(date: LocalDate): DayStateEntity?
+
+    @Query("SELECT * FROM day_states WHERE date = :date")
+    fun observe(date: LocalDate): Flow<DayStateEntity?>
+
+    @Query("SELECT * FROM day_states WHERE date < :date ORDER BY date DESC LIMIT 1")
+    suspend fun latestBefore(date: LocalDate): DayStateEntity?
+
+    @Query("SELECT * FROM day_states WHERE date BETWEEN :from AND :to")
+    suspend fun between(from: LocalDate, to: LocalDate): List<DayStateEntity>
+
+    @Query("SELECT MIN(date) FROM day_states")
+    suspend fun firstDate(): LocalDate?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(e: DayStateEntity)
+}
+
+@Dao
+interface ActiveLessonDao {
+    @Query("SELECT * FROM active_lesson WHERE id = 1")
+    fun observe(): Flow<ActiveLessonEntity?>
+
+    @Query("SELECT * FROM active_lesson WHERE id = 1")
+    suspend fun get(): ActiveLessonEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun set(e: ActiveLessonEntity)
+
+    @Query("DELETE FROM active_lesson")
+    suspend fun clear()
+
+    @Query("UPDATE active_lesson SET derailCount = derailCount + 1 WHERE id = 1")
+    suspend fun incrementDerail()
+}
+
+@Dao
+interface BlockedAppDao {
+    @Query("SELECT * FROM blocked_apps ORDER BY label")
+    fun observeAll(): Flow<List<BlockedAppEntity>>
+
+    @Query("SELECT packageName FROM blocked_apps WHERE enabled = 1")
+    fun observeEnabledPackages(): Flow<List<String>>
+
+    @Query("SELECT COUNT(*) FROM blocked_apps")
+    suspend fun count(): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(e: BlockedAppEntity)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertAllIgnore(e: List<BlockedAppEntity>)
+
+    @Query("DELETE FROM blocked_apps WHERE packageName = :packageName")
+    suspend fun delete(packageName: String)
+}
+
+@Dao
+interface ServiceGapDao {
+    @Query("SELECT * FROM service_gaps WHERE endedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
+    suspend fun open(): ServiceGapEntity?
+
+    /** [from] 以降に少しでも重なる停止区間（開始が [from] より前でも、終了が [from] 以降なら含む）。 */
+    @Query("SELECT * FROM service_gaps WHERE endedAt IS NULL OR endedAt >= :from ORDER BY startedAt")
+    suspend fun since(from: java.time.Instant): List<ServiceGapEntity>
+
+    @Insert suspend fun insert(e: ServiceGapEntity): Long
+    @Update suspend fun update(e: ServiceGapEntity)
+}
+
+@Dao
+interface DailyReportDao {
+    @Query("SELECT * FROM daily_reports ORDER BY date DESC")
+    fun observeAll(): Flow<List<DailyReportEntity>>
+
+    @Query("SELECT * FROM daily_reports WHERE date = :date")
+    suspend fun byDate(date: LocalDate): DailyReportEntity?
+
+    @Query("SELECT * FROM daily_reports WHERE date = :date")
+    fun observe(date: LocalDate): Flow<DailyReportEntity?>
+
+    @Query("SELECT date FROM daily_reports")
+    suspend fun dates(): List<LocalDate>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(e: DailyReportEntity)
+
+    @Query("UPDATE daily_reports SET notified = 1 WHERE date = :date")
+    suspend fun markNotified(date: LocalDate)
+}
+
+@Dao
+interface WeeklyReportDao {
+    @Query("SELECT * FROM weekly_reports ORDER BY weekStart DESC")
+    fun observeAll(): Flow<List<WeeklyReportEntity>>
+
+    @Query("SELECT * FROM weekly_reports WHERE weekStart = :weekStart")
+    suspend fun byWeek(weekStart: LocalDate): WeeklyReportEntity?
+
+    @Query("SELECT weekStart FROM weekly_reports")
+    suspend fun weeks(): List<LocalDate>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(e: WeeklyReportEntity)
+
+    @Query("UPDATE weekly_reports SET notified = 1 WHERE weekStart = :weekStart")
+    suspend fun markNotified(weekStart: LocalDate)
+}
+
+data class DateAxisGain(val produceDate: LocalDate, val axis: Axis, val total: Int)
+
+data class GoalWithTargets(
+    @androidx.room.Embedded val goal: GoalEntity,
+    @androidx.room.Relation(parentColumn = "id", entityColumn = "goalId") val targets: List<GoalTargetEntity>,
+)
+
+@Dao
+interface GoalDao {
+    @androidx.room.Transaction
+    @Query("SELECT * FROM goals WHERE status = 'ACTIVE' ORDER BY createdAt DESC LIMIT 1")
+    fun observeActive(): Flow<GoalWithTargets?>
+
+    @androidx.room.Transaction
+    @Query("SELECT * FROM goals WHERE status = 'ACTIVE' ORDER BY createdAt DESC LIMIT 1")
+    suspend fun active(): GoalWithTargets?
+
+    @androidx.room.Transaction
+    @Query("SELECT * FROM goals WHERE id = :id")
+    suspend fun byId(id: Long): GoalWithTargets?
+
+    /** その日に有効だった目標。進行中を優先し、なければ試験で閉じた目標（放棄したものは除く）。 */
+    @androidx.room.Transaction
+    @Query(
+        "SELECT * FROM goals WHERE startDate <= :date AND deadline >= :date AND status != 'ABANDONED' " +
+            "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, createdAt DESC LIMIT 1",
+    )
+    suspend fun coveringDate(date: LocalDate): GoalWithTargets?
+
+    @androidx.room.Transaction
+    @Query("SELECT * FROM goals ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<GoalWithTargets>>
+
+    @Insert suspend fun insertGoal(e: GoalEntity): Long
+    @Update suspend fun updateGoal(e: GoalEntity)
+    @Insert suspend fun insertTargets(e: List<GoalTargetEntity>)
+    @Update suspend fun updateTarget(e: GoalTargetEntity)
+
+    @Query("SELECT * FROM goal_targets WHERE id = :id")
+    suspend fun target(id: Long): GoalTargetEntity?
+
+    @Query("SELECT COUNT(*) FROM action_logs WHERE templateId = :templateId AND produceDate BETWEEN :from AND :to")
+    suspend fun countActions(templateId: Long, from: LocalDate, to: LocalDate): Int
+
+    @Query("SELECT COALESCE(SUM(gain), 0) FROM action_logs WHERE axis = :axis AND produceDate BETWEEN :from AND :to")
+    suspend fun axisGain(axis: Axis, from: LocalDate, to: LocalDate): Int
+}
+
+@Dao
+interface ExamResultDao {
+    @Query("SELECT * FROM exam_results WHERE goalId = :goalId ORDER BY date DESC")
+    fun observeByGoal(goalId: Long): Flow<List<ExamResultEntity>>
+
+    @Query("SELECT * FROM exam_results WHERE goalId = :goalId AND kind = :kind AND date = :date LIMIT 1")
+    suspend fun find(goalId: Long, kind: ExamKind, date: LocalDate): ExamResultEntity?
+
+    @Insert suspend fun insert(e: ExamResultEntity): Long
+}
