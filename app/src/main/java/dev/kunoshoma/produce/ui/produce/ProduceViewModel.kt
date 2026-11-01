@@ -39,8 +39,15 @@ class ProduceViewModel @Inject constructor(private val repo: ProduceRepository) 
     }
 
     fun draw(redraw: Boolean) = viewModelScope.launch {
-        val result = repo.generateChoices(redraw)
-        if (result.isNotEmpty()) _choices.value = result
+        // 連打で引き直し回数を 2 回分消費しないよう、処理中は受け付けない
+        if (_busy.value) return@launch
+        _busy.value = true
+        try {
+            val result = repo.generateChoices(redraw)
+            if (result.isNotEmpty()) _choices.value = result
+        } finally {
+            _busy.value = false
+        }
     }
 
     fun pickLesson(choice: Choice.Lesson) = viewModelScope.launch {
@@ -61,14 +68,19 @@ class ProduceViewModel @Inject constructor(private val repo: ProduceRepository) 
         _busy.value = true
         lastPickWasSleep = false
         repo.startRest(minutes, packageName)
-        _event.value = ProduceEvent.Done
+            .onSuccess { _event.value = ProduceEvent.Done }
+            .onFailure { _event.value = ProduceEvent.Error(it.message ?: "休めなかった") }
         _busy.value = false
     }
 
+    /** 「寝る」：日を閉じて、その場で日次レポートを作る（ホームの「寝る」と同じ処理）。 */
     fun pickSleep() = viewModelScope.launch {
+        if (_busy.value) return@launch
+        _busy.value = true
         lastPickWasSleep = true
-        repo.closeDay()
+        repo.closeDayAndReport()
         _event.value = ProduceEvent.Done
+        _busy.value = false
     }
 
     fun consumeEvent() { _event.value = null }

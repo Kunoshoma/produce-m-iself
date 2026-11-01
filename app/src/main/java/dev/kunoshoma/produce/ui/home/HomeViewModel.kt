@@ -30,10 +30,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun closeDay() = viewModelScope.launch {
-        repo.closeDay()
-        reports.generateDaily(repo.today(), force = true)
-    }
+    fun closeDay() = viewModelScope.launch { repo.closeDayAndReport() }
     fun reopenDay() = viewModelScope.launch { repo.reopenDay() }
     fun setOffDay(off: Boolean) = viewModelScope.launch { repo.setOffDay(off) }
     fun reportSleep(bucket: SleepBucket) = viewModelScope.launch { repo.reportSleep(bucket) }

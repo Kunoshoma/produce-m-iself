@@ -85,6 +85,16 @@ interface RestLogDao {
 
     @Query("SELECT * FROM rest_logs WHERE produceDate BETWEEN :from AND :to ORDER BY startedAt")
     suspend fun between(from: LocalDate, to: LocalDate): List<RestLogEntity>
+
+    /** 進行中の休む（endedAt が null なのは REST だけ）。日付境界をまたいでも追える。 */
+    @Query("SELECT * FROM rest_logs WHERE endedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
+    suspend fun openRest(): RestLogEntity?
+
+    @Query("SELECT * FROM rest_logs WHERE endedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
+    fun observeOpenRest(): Flow<RestLogEntity?>
+
+    @Query("DELETE FROM rest_logs WHERE actionLogId = :actionLogId")
+    suspend fun deleteByActionLog(actionLogId: Long)
 }
 
 @Dao
@@ -147,7 +157,8 @@ interface ServiceGapDao {
     @Query("SELECT * FROM service_gaps WHERE endedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
     suspend fun open(): ServiceGapEntity?
 
-    @Query("SELECT * FROM service_gaps WHERE startedAt >= :from OR endedAt IS NULL ORDER BY startedAt")
+    /** [from] 以降に少しでも重なる停止区間（開始が [from] より前でも、終了が [from] 以降なら含む）。 */
+    @Query("SELECT * FROM service_gaps WHERE endedAt IS NULL OR endedAt >= :from ORDER BY startedAt")
     suspend fun since(from: java.time.Instant): List<ServiceGapEntity>
 
     @Insert suspend fun insert(e: ServiceGapEntity): Long

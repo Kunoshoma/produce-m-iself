@@ -4,7 +4,6 @@ import dev.kunoshoma.produce.data.db.DayKind
 import dev.kunoshoma.produce.data.settings.Settings
 import dev.kunoshoma.produce.domain.HomeState
 import java.time.Instant
-import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
@@ -31,15 +30,18 @@ object InterruptGate {
     ): Decision {
         if (!settings.interruptEnabled) return Decision.Allow
         if (packageName !in blocked) return Decision.Allow
-        if (settings.quietHours.isQuiet(LocalTime.ofInstant(now, zone))) return Decision.Allow
-        val h = home ?: return Decision.ShowChoices
+        // LocalTime.ofInstant は API 34 以降なので使わない（minSdk 31）
+        if (settings.quietHours.isQuiet(now.atZone(zone).toLocalTime())) return Decision.Allow
+        // 状態がまだ読めていないときは止めない（寝る宣言・休憩中・オフ日を無視して割り込まないため）
+        val h = home ?: return Decision.Allow
+        // レッスン中は休む・バイパスより優先して止める
+        if (h.activeLesson != null) return Decision.BlockDuringLesson
         if (h.isClosed || h.day.kind == DayKind.OFF) return Decision.Allow
         h.day.bypassUntil?.let { if (now.isBefore(it)) return Decision.Allow }
         h.activeRest?.let { rest ->
             val until = rest.startedAt.plus(rest.allowedMin.toLong(), ChronoUnit.MINUTES)
             return if (now.isBefore(until)) Decision.Allow else Decision.RestExpired
         }
-        if (h.activeLesson != null) return Decision.BlockDuringLesson
         return Decision.ShowChoices
     }
 }

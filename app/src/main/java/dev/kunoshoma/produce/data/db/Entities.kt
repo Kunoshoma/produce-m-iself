@@ -76,6 +76,8 @@ data class RestLogEntity(
     val staminaRecovered: Int,
     val kind: RestKind,
     val packageName: String? = null,
+    /** 「隠れて娯楽」の自己申告から自動生成された行なら、元のレッスンログ ID。ログ削除時に一緒に消す。 */
+    val actionLogId: Long? = null,
 )
 
 enum class DayKind { NORMAL, OFF }
@@ -103,6 +105,8 @@ data class DayStateEntity(
     /** 緊急バイパスの使用回数と有効期限（SPEC 4.2）。 */
     val bypassesUsed: Int = 0,
     val bypassUntil: Instant? = null,
+    /** 現在の 3 択の乱数シード。引き直すまで同じ手札を再現する（画面を閉じても手札が変わらない）。 */
+    val choiceSeed: Long? = null,
 )
 
 /** 割り込み対象の娯楽アプリ。 */

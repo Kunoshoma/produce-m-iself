@@ -346,7 +346,7 @@ private fun LogRow(log: ActionLogEntity, s: HomeState, onDelete: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirm = false },
             title = { Text("この記録を消す？") },
-            text = { Text("獲得は取り消され、体力は戻る。") },
+            text = { Text("獲得は取り消され、体力は戻る。正直ボーナスや「隠れて娯楽」の娯楽時間も一緒に取り消す。") },
             confirmButton = { TextButton(onClick = { onDelete(); confirm = false }) { Text("消す") } },
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("やめる") } },
         )
